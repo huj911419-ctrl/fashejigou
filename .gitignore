@@ -1,0 +1,30 @@
+# IDE / Editor
+.vscode/
+.codeartsdoer/
+
+# CubeMX project metadata
+.mxproject
+
+# Build output
+build/
+
+# Object and listing files
+*.o
+*.d
+*.elf
+*.hex
+*.bin
+*.map
+*.su
+*.list
+*.lst
+
+# Scratch / work-in-progress notes
+.scratch/
+
+# OS junk
+Thumbs.db
+desktop.ini
+.DS_Store
+*~
+*.swp

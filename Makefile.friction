@@ -1,0 +1,3 @@
+# Dedicated entry point. Cannot accidentally select the sentry application.
+override ROBOT := friction_bench
+include Makefile

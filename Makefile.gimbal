@@ -1,0 +1,3 @@
+# Independent yaw application; default/sentry builds remain unchanged.
+override ROBOT := gimbal_bench
+include Makefile

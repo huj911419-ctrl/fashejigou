@@ -1,0 +1,93 @@
+"""Check the maintained portable subset, not generated/vendor/legacy firmware.
+
+The CMake host library also compiles this subset without HAL or RTOS headers.
+This check catches forbidden dependencies even if someone adds an include path
+to make such a dependency compile. Run from any current working directory.
+"""
+from pathlib import Path
+import re
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+PURE_DIRS = (
+    "module/control_authority",
+    "module/parameter_store",
+    "module/vofa", "module/speed_ready", "module/dbus_input",
+    "module/yaw_rate", "module/dm_velocity", "application/gimbal_control",
+    "module/imu_sample", "module/bmi088_sensor", "module/attitude",
+    "module/text_console",
+    "module/loop_stats", "module/event_history", "module/yaw_angle",
+    "application/robot_cmd",
+)
+PURE_FILES = (
+    "application/parameters/friction_profile.c",
+    "application/parameters/friction_profile.h",
+    "application/friction_bench/friction_control.c",
+    "application/friction_bench/friction_control.h",
+    "application/friction_bench/friction_monitor.c",
+    "application/friction_bench/friction_monitor.h",
+)
+ADAPTER_FREE_BUSINESS = (
+    "application/parameters/friction_profile_service.c",
+    "application/parameters/friction_profile_service.h",
+    "application/runtime/runtime_events.c",
+    "application/runtime/runtime_events.h",
+    "application/friction_bench/friction.c",
+    "application/friction_bench/friction.h",
+    "application/gimbal_bench/gimbal.c",
+    "application/gimbal_bench/gimbal.h",
+    "application/gimbal_bench/gimbal_imu.c",
+    "application/gimbal_bench/gimbal_imu.h",
+)
+FORBIDDEN_HEADERS = re.compile(
+    r"^(?:main\.h|stm32.*|FreeRTOS\.h|task\.h|cmsis.*|arm_math\.h|"
+    r"fdcan\.h|usart\.h|spi\.h|bsp_dwt\.h|dji_motor\.h|controller\.h)$"
+)
+FORBIDDEN_SYMBOLS = re.compile(r"\b(?:HAL_\w+|__get_PRIMASK|__disable_irq|__set_PRIMASK|"
+                               r"taskENTER_CRITICAL|taskEXIT_CRITICAL|PIDInstance|DJIMotorInstance)\b")
+
+
+def code_text(path):
+    text = path.read_text(encoding="utf-8-sig")
+    # These sources have no comment delimiters inside string literals.
+    return re.sub(r"/\*.*?\*/|//[^\n]*", lambda match: "\n" * match[0].count("\n"), text, flags=re.S)
+
+
+def main():
+    pure = {ROOT / name for name in PURE_FILES}
+    for directory in PURE_DIRS:
+        pure.update(p for p in (ROOT / directory).glob("*.[ch]"))
+    files = pure | {ROOT / name for name in ADAPTER_FREE_BUSINESS}
+    errors = []
+    for path in sorted(files):
+        text = code_text(path)
+        label = path.relative_to(ROOT).as_posix()
+        for line, source in enumerate(text.splitlines(), 1):
+            include = re.search(r'#\s*include\s*[<"]([^>"]+)', source)
+            if include and FORBIDDEN_HEADERS.match(include[1].split("/")[-1]):
+                errors.append(f"{label}:{line}: forbidden hardware header {include[1]}")
+            if FORBIDDEN_SYMBOLS.search(source):
+                errors.append(f"{label}:{line}: hardware/driver internals in control business")
+            if path in pure and include:
+                header = include[1].split("/")[-1]
+                if label.startswith("application/gimbal_control/") and header in (
+                    "dbus_input.h", "gimbal_remote.h", "remote_control.h", "robot_cmd.h",
+                    "vofa.h", "gimbal.h",
+                ):
+                    errors.append(f"{label}:{line}: command-source dependency in actuator core")
+                if label.startswith("application/robot_cmd/") and header in (
+                    "gimbal_control.h", "dm_velocity.h", "yaw_rate.h", "gimbal.h",
+                    "dji_speed_group.h", "runtime_events.h",
+                ):
+                    errors.append(f"{label}:{line}: actuator/runtime dependency in command producer")
+                if header.startswith("bsp_") or header in ("control_platform.h", "gimbal_port.h", "imu_port.h"):
+                    errors.append(f"{label}:{line}: platform dependency in portable core")
+    if errors:
+        print("\n".join(errors), file=sys.stderr)
+        return 1
+    print(f"Architecture boundaries passed for {len(files)} maintained C sources/headers")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
