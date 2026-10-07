@@ -22,6 +22,9 @@ build/
 # Scratch / work-in-progress notes
 .scratch/
 
+# Python cache
+__pycache__/
+
 # OS junk
 Thumbs.db
 desktop.ini
