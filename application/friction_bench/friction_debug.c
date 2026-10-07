@@ -249,12 +249,9 @@ static void FillWheelChannels(float *channels, const Friction_Telemetry_s *snaps
 
 void FrictionDebugInit(const Vofa_Port_s *port)
 {
-    Friction_Command_Source_e source = FRICTION_SOURCE_NONE;
-    if (BENCH_FRICTION_ACTIVE)
-    {
-        source = BENCH_ENABLE_VOFA && port != NULL && port->read != NULL ? FRICTION_SOURCE_VOFA :
-            BENCH_ENABLE_RTT_COMMAND ? FRICTION_SOURCE_RTT : FRICTION_SOURCE_NONE;
-    }
+    /* USB owns motor commands. UART10 is telemetry-only. */
+    Friction_Command_Source_e source = BENCH_ENABLE_USB ? FRICTION_SOURCE_USB :
+        (BENCH_ENABLE_RTT_COMMAND ? FRICTION_SOURCE_RTT : FRICTION_SOURCE_NONE);
     if (FrictionSelectSource(source) != FRICTION_SUBMIT_ACCEPTED)
     {
         return; /* A queued profile keeps both its transport and owner unchanged. */
@@ -266,7 +263,13 @@ void FrictionDebugInit(const Vofa_Port_s *port)
         .call = Call,
         .rx_fault = RxFault,
     };
-    VofaInit(&debug, BENCH_ENABLE_VOFA ? port : NULL, &handler);
+    Vofa_Port_s output = {0};
+    if (BENCH_ENABLE_VOFA && port != NULL)
+    {
+        output = *port;
+        output.read = NULL; /* Never accept motor commands from UART10. */
+    }
+    VofaInit(&debug, BENCH_ENABLE_VOFA ? &output : NULL, &handler);
     period_ms = FRICTION_VOFA_PERIOD_MS;
     last_frame_ms = 0;
     input_ms = 0;
@@ -274,7 +277,8 @@ void FrictionDebugInit(const Vofa_Port_s *port)
 
 uint8_t FrictionDebugOwnsCommands(void)
 {
-    return FrictionGetSource() == FRICTION_SOURCE_VOFA;
+    Friction_Command_Source_e source = FrictionGetSource();
+    return source == FRICTION_SOURCE_VOFA;
 }
 
 void FrictionDebugPoll(uint32_t now_ms)

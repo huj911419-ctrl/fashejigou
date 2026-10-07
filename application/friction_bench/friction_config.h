@@ -7,18 +7,19 @@
  * Same ID on different buses is legal; duplicate IDs on one bus are rejected.
  * Direction +1/-1 maps positive RPM to the desired contact-surface direction.
  * Gains use degree/s error, current limits use C620 command units, NOT amperes.
- * These conservative bench values are starting points, NOT tuned wheel gains.
+ * These are first-pass low-speed bench values; final launch gains still require
+ * a loaded-wheel test and chronograph validation.
  */
 #ifndef FRICTION_MOTOR_CONFIGS
 #define FRICTION_MOTOR_CONFIGS { \
-    {.can_bus = 2, .id = 1, .direction = 1, .kp = 0.5f, .ki = 0.1f, .current_limit = 1500.0f}, \
-    {.can_bus = 2, .id = 2, .direction = 1, .kp = 0.5f, .ki = 0.1f, .current_limit = 1500.0f}, \
-    {.can_bus = 2, .id = 3, .direction = 1, .kp = 0.5f, .ki = 0.1f, .current_limit = 1500.0f}  \
+    {.can_bus = 2, .id = 1, .direction = 1, .kp = 1.0f, .ki = 0.00f, .current_limit = 5000.0f}, \
+    {.can_bus = 2, .id = 2, .direction = 1, .kp = 1.0f, .ki = 0.00f, .current_limit = 5000.0f}, \
+    {.can_bus = 2, .id = 3, .direction = 1, .kp = 1.0f, .ki = 0.00f, .current_limit = 5000.0f}  \
 }
 #endif
 
 #define FRICTION_CONTROL_CONFIG { \
-    .max_rpm = 5000.0f, .ramp_rpm_s = 300.0f, \
+    .max_rpm = 7500.0f, .ramp_rpm_s = 1000.0f, \
     .command_timeout_ms = 250U, .feedback_timeout_ms = 50U, \
     .max_step_ms = 5U, .max_temperature_c = 70U \
 }

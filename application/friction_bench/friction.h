@@ -11,7 +11,8 @@ typedef enum
 {
     FRICTION_SOURCE_NONE,
     FRICTION_SOURCE_RTT,
-    FRICTION_SOURCE_VOFA
+    FRICTION_SOURCE_VOFA,
+    FRICTION_SOURCE_USB
 } Friction_Command_Source_e;
 
 typedef enum
@@ -111,9 +112,8 @@ Friction_Submit_Result_e FrictionSubmitFrom(Friction_Command_Source_e source,
  * Selecting a build-disabled wheel latches COMMAND fault for the whole request.
  * Zero coasts all; 7 requires all three build switches to be enabled. */
 void FrictionSubmit(const Friction_Command_s *command);
-/** USB console compatibility wrapper: same as RTT command path.
- * Accepts "set <mask> <rpm1> <rpm2> <rpm3>" or "off" via the USB text console.
- * This breaks the read-only diagnostic design; use only for bench testing. */
+/** USB friction bench command parser. Accepts off, set, pid and ramp commands.
+ * Commands are queued for the motor task; a successful return is not an output ACK. */
 uint8_t FrictionSubmitFromUsbCommand(const char *line, uint32_t now_ms);
 /** Global sticky stop. Never unlocks a source change on another source's behalf;
  * a later enable cannot overwrite it before the motor task sees it. */

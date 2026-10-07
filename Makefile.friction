@@ -1,3 +1,4 @@
 # Dedicated entry point. Cannot accidentally select the sentry application.
 override ROBOT := friction_bench
+override BENCH_DEFINES += -DBENCH_ENABLE_VOFA=1 -DBENCH_ENABLE_RTT_COMMAND=0
 include Makefile

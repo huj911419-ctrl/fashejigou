@@ -24,7 +24,7 @@ static EventHistorySnapshot_s event_snapshot; /* Diagnostic task owns this copy,
 static void Version(void)
 {
     TextConsolePrint(&console, "[firmware] profile=%s console=1 build=%s %s", profile, __DATE__, __TIME__);
-    TextConsolePrint(&console, "[USB] DM-MC02 native CDC PA11/PA12; commands: help/status/events/ping/version/stream on/stream off/period 200..10000");
+    TextConsolePrint(&console, "[USB] friction commands: off; set <mask> <rpm1> <rpm2> <rpm3>; pid <wheel> <kp> <ki> <kd> <limit>; ramp <rpm_s>");
     TextConsolePrint(&console, "[units] mrad=0.001rad; mm_s2=0.001m/s^2; milli=0.001; cC=0.01C; all commands read-only for actuators");
 }
 
@@ -169,42 +169,16 @@ static void Command(void *context, const char *line, uint32_t now_ms)
         FrictionDisable();
         TextConsolePrint(&console, "[OK] friction off");
     }
-    else if (strncmp(line, "set ", 4) == 0)
+    else if (strncmp(line, "set ", 4) == 0 || strncmp(line, "pid ", 4) == 0 ||
+             strncmp(line, "ramp ", 5) == 0)
     {
-        long values[4] = {0};
-        uint8_t valid = 1;
-        const char *cursor = line + 4;
-        for (unsigned i = 0; valid && i < 4; ++i)
+        if (FrictionSubmitFromUsbCommand(line, now_ms))
         {
-            char *end;
-            values[i] = strtol(cursor, &end, 10);
-            if (end == cursor)
-            {
-                valid = 0;
-            }
-            cursor = end;
-            while (*cursor == ' ') ++cursor;
-        }
-        if (valid && values[0] >= 0 && values[0] <= 7)
-        {
-            Friction_Command_s command =
-            {
-                .enable_mask = (uint8_t)values[0],
-                .target_rpm = {(float)values[1], (float)values[2], (float)values[3]},
-            };
-            Friction_Submit_Result_e result = FrictionSubmitFrom(FRICTION_SOURCE_RTT, &command, HAL_GetTick());
-            if (result == FRICTION_SUBMIT_ACCEPTED)
-            {
-                TextConsolePrint(&console, "[OK] set mask=%ld rpm=%ld,%ld,%ld", values[0], values[1], values[2], values[3]);
-            }
-            else
-            {
-                TextConsolePrint(&console, "[ERR] submit rejected: %u", (unsigned)result);
-            }
+            TextConsolePrint(&console, "[OK] friction command accepted; wait for status enabled_mask before judging output");
         }
         else
         {
-            TextConsolePrint(&console, "[ERR] invalid set; use: set <mask> <rpm1> <rpm2> <rpm3>");
+            TextConsolePrint(&console, "[ERR] invalid/busy friction command; use set/pid/ramp syntax from help");
         }
     }
     else if (strncmp(line, "period ", 7U) == 0)
@@ -233,7 +207,7 @@ static void Command(void *context, const char *line, uint32_t now_ms)
     }
     else
     {
-        TextConsolePrint(&console, "[ERR] unknown command; send help/status/events/ping/off/set");
+        TextConsolePrint(&console, "[ERR] unknown command; send help/status/ping/off/set/pid/ramp");
     }
 }
 

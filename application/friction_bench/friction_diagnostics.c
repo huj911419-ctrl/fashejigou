@@ -20,10 +20,10 @@ void FrictionDiagnosticsReport(TextConsole_s *console, uint32_t now_ms)
     }
     Friction_Telemetry_s telemetry;
     FrictionGetTelemetry(&telemetry);
-    static const char *const sources[] = {"NONE", "RTT", "VOFA"};
+    static const char *const sources[] = {"NONE", "RTT", "VOFA", "USB"};
     unsigned source = (unsigned)telemetry.command_source;
     TextConsolePrint(console, "[friction_authority] selected_now=%s epoch=%lu owner_off_required=%u; selected source is not motor enable",
-                     source < 3U ? sources[source] : "UNKNOWN", (unsigned long)telemetry.source_epoch,
+                     source < 4U ? sources[source] : "UNKNOWN", (unsigned long)telemetry.source_epoch,
                      telemetry.source_requires_off);
     TextConsolePrint(console, "[parameters] %s revision=%lu storage=UNBOUND; applied values in RAM only",
                      BENCH_ENABLE_PARAMETERS ? "ENABLED" : "DISABLED", (unsigned long)telemetry.tuning_revision);
@@ -80,6 +80,10 @@ void FrictionDiagnosticsReport(TextConsole_s *console, uint32_t now_ms)
     if (status->fault != 0U)
     {
         TextConsolePrint(console, "[hint friction] fault bits: 1=config 2=command 4=offline 8=temperature 16=timing 32=driver; ID=0 must be configured first");
+        if ((status->fault & FRICTION_FAULT_COMMAND) != 0U && status->enabled_mask == 0U)
+        {
+            TextConsolePrint(console, "[hint friction] command interlock is active; send USB 'off', wait for enabled_mask=0, then send a fresh 'set' keepalive");
+        }
     }
     TextConsolePrint(console, "[profile] DBUS/DM-J4310/BMI088=NOT_MONITORED; VOFA uses separate port binding; USB console is text only");
 }
