@@ -70,6 +70,7 @@ static void Complete(void)
 int main(void)
 {
     TextConsolePort_s port = UsbConsolePortInit();
+    assert(port.utf8_packet_size == CDC_DATA_FS_MAX_PACKET_SIZE - 1U);
     uint8_t text[] = "hello";
     assert(port.session(NULL) == 0U);
     assert(!port.write(NULL, text, 5U) && submissions == 0U);

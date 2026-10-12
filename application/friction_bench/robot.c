@@ -8,7 +8,9 @@
 #include "main.h"
 #include "diagnostics.h"
 #include "friction_diagnostics.h"
+#include "friction_usb_log.h"
 #include "runtime_events.h"
+#include "friction_remote_bench.h"
 
 void RobotInit(void)
 {
@@ -28,10 +30,17 @@ void RobotInit(void)
         Vofa_Port_s port = FrictionDebugPort();
         FrictionDebugInit(&port);
     }
-    if (BENCH_ENABLE_USB && !DiagnosticsInit("friction_bench", FrictionDiagnosticsReport))
+    if (BENCH_ENABLE_USB && !DiagnosticsInitWithCommands("friction_bench", FrictionDiagnosticsReport,
+                                                        FrictionUsbConsoleCommand))
     {
         Error_Handler();
     }
+    if (BENCH_ENABLE_USB)
+    {
+        FrictionUsbLogInit();
+    }
+    /* FrictionInit has prepared OFF; transport initialization keeps its owner. */
+    FrictionRemoteBenchInit();
     RobotOSTaskInit();
     if (BENCH_ENABLE_RTT_LOG)
     {

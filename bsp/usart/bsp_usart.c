@@ -12,6 +12,10 @@
 #include "bsp_log.h"
 #include "stdlib.h"
 #include "memory.h"
+#if defined(ROBOT_FRICTION_BENCH)
+#include "friction_remote_port.h"
+#include "usart.h"
+#endif
 
 /* usart service instance, modules' info would be recoreded here using USARTRegister() */
 /* usart服务实例,所有注册了usart的模块信息会被保存在这里 */
@@ -131,6 +135,12 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
  */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
+#if defined(ROBOT_FRICTION_BENCH)
+    if (huart == &huart5 && FrictionRcPortOnError())
+    {
+        return;
+    }
+#endif
     for (uint8_t i = 0; i < idx; ++i)
     {
         if (huart == usart_instance[i]->usart_handle)

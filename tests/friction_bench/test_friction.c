@@ -422,19 +422,26 @@ static void TestCommandOwnership(void)
 static void TestWithoutRtt(void)
 {
     assert(FrictionInit());
-    assert(FrictionGetSource() == FRICTION_SOURCE_NONE);
+    assert(FrictionGetSource() == (BENCH_FRICTION_REMOTE_ACTIVE ? FRICTION_SOURCE_REMOTE :
+                                  (BENCH_FRICTION_ACTIVE && BENCH_ENABLE_USB ?
+                                   FRICTION_SOURCE_USB : FRICTION_SOURCE_NONE)));
     Friction_Command_s run = {.enable_mask = BENCH_FRICTION_MASK, .target_rpm = {300.0f, 300.0f, 300.0f}};
     const Friction_Command_s stopped = {0};
     assert(FrictionSelectSource(FRICTION_SOURCE_RTT) == FRICTION_SUBMIT_UNAVAILABLE);
     FrictionDisable();
     Tick();
+    assert(FrictionSubmitFrom(FRICTION_SOURCE_RTT, &run, now_ms) == FRICTION_SUBMIT_UNAVAILABLE);
+    assert(FrictionSubmitFrom((Friction_Command_Source_e)99, &run, now_ms) == FRICTION_SUBMIT_UNAVAILABLE);
+    assert(FrictionGetSource() == FRICTION_SOURCE_NONE);
     FrictionSubmit(&run);
     Tick();
     assert(Status().enabled_mask == 0U);
     Vofa_Port_s port = {DebugRead, DebugWrite, NULL};
     FrictionDebugInit(&port);
+    assert(FrictionGetSource() == FRICTION_SOURCE_NONE); /* Transport init has no authority side effect. */
     if (BENCH_ENABLE_VOFA && BENCH_FRICTION_ACTIVE)
     {
+        assert(FrictionSelectSource(FRICTION_SOURCE_VOFA) == FRICTION_SUBMIT_ACCEPTED);
         assert(FrictionGetSource() == FRICTION_SOURCE_VOFA);
         assert(FrictionSubmitFrom(FRICTION_SOURCE_VOFA, &stopped, now_ms) == FRICTION_SUBMIT_ACCEPTED);
         Tick();
@@ -447,6 +454,9 @@ static void TestWithoutRtt(void)
         assert(Status().enabled_mask == BENCH_FRICTION_MASK);
     }
     FrictionDebugInit(NULL);
+    assert(FrictionGetSource() == (BENCH_ENABLE_VOFA && BENCH_FRICTION_ACTIVE ?
+                                  FRICTION_SOURCE_VOFA : FRICTION_SOURCE_NONE));
+    FrictionDisable();
     Tick();
     assert(FrictionGetSource() == FRICTION_SOURCE_NONE && Status().enabled_mask == 0U);
     puts("PASS: RTT-disabled build cannot fall back to an unavailable command source");
@@ -455,6 +465,15 @@ static void TestWithoutRtt(void)
 int main(void)
 {
     TestControlEdges();
+#ifdef TEST_UNCONFIGURED
+    assert(!FrictionInit());
+    assert(registered == 0);
+    Tick();
+    assert(Status().fault & FRICTION_FAULT_CONFIG);
+    assert(sent == 0);
+    puts("PASS: explicitly unconfigured IDs cannot register or drive motors");
+    return 0;
+#endif
     if (!BENCH_ENABLE_RTT_COMMAND)
     {
         TestWithoutRtt();
@@ -510,6 +529,7 @@ int main(void)
                 {
                     DJIMotorInstance *motor = instances[compact++].id;
                     assert(motor->motor_controller.speed_PID.Kp == (float)(i + 1U));
+                    assert(motor->motor_controller.speed_PID.Improve & PID_ConditionalIntegration);
                 }
             }
             if (BENCH_FRICTION_MASK != 7U)
@@ -540,19 +560,16 @@ int main(void)
         puts("PASS: selected registration, fixed wheel numbering/tuning, excluded command rejection and disabled transport");
         return 0;
     }
-#ifdef TEST_UNCONFIGURED
-    assert(!FrictionInit());
-    assert(registered == 0);
-    Tick();
-    assert(Status().fault & FRICTION_FAULT_CONFIG);
-    assert(sent == 0);
-    puts("PASS: unconfigured IDs cannot register or drive motors");
-    return 0;
-#else
+#ifndef TEST_UNCONFIGURED
     assert(FrictionInit());
     assert(registered == 3);
+    for (unsigned i = 0U; i < registered; ++i)
+    {
+        const DJIMotorInstance *motor = instances[i].id;
+        assert(motor->motor_controller.speed_PID.Improve & PID_ConditionalIntegration);
+    }
     assert(instances[0].rx_id == 0x201 && instances[1].rx_id == 0x203 && instances[2].rx_id == 0x208);
-    /* An idle startup must not manufacture an explicit OFF authorization. */
+    /* Clean startup prepares OFF but still rejects a non-owner RTT RUN. */
     for (unsigned i = 0U; i < 20U; ++i)
     {
         FeedAll();
@@ -562,6 +579,8 @@ int main(void)
     FrictionSubmit(&first_run);
     Tick();
     assert(Status().enabled_mask == 0U);
+    assert(FrictionGetSource() == (BENCH_FRICTION_REMOTE_ACTIVE ? FRICTION_SOURCE_REMOTE :
+                                  FRICTION_SOURCE_USB) && Status().fault == 0U);
     assert(Current(3, 0x200, 0) == 0 && Current(2, 0x1FF, 3) == 0);
     FrictionDisable(); Tick();
     TestRemote();

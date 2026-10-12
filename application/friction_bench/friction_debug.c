@@ -249,13 +249,7 @@ static void FillWheelChannels(float *channels, const Friction_Telemetry_s *snaps
 
 void FrictionDebugInit(const Vofa_Port_s *port)
 {
-    /* USB owns motor commands. UART10 is telemetry-only. */
-    Friction_Command_Source_e source = BENCH_ENABLE_USB ? FRICTION_SOURCE_USB :
-        (BENCH_ENABLE_RTT_COMMAND ? FRICTION_SOURCE_RTT : FRICTION_SOURCE_NONE);
-    if (FrictionSelectSource(source) != FRICTION_SUBMIT_ACCEPTED)
-    {
-        return; /* A queued profile keeps both its transport and owner unchanged. */
-    }
+    /* UART10 is telemetry-only; starting waves must not select a motor owner. */
     FrictionProfileServiceInit(&profiles);
     Vofa_Handler_s handler = {
         .get = Get,

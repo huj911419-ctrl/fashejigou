@@ -9,7 +9,9 @@ bool TextConsoleInit(TextConsole_s *console, const TextConsolePort_s *port,
                      TextConsoleCommand_f command, void *context)
 {
     if (console == NULL || port == NULL || port->session == NULL ||
-        port->read == NULL || port->write == NULL || command == NULL)
+        port->read == NULL || port->write == NULL || command == NULL ||
+        (port->utf8_packet_size != 0U &&
+         (port->utf8_packet_size < 4U || port->utf8_packet_size > TEXT_CONSOLE_PACKET_SIZE)))
     {
         return false;
     }
@@ -74,6 +76,39 @@ static void Receive(TextConsole_s *console, uint32_t now_ms)
     }
 }
 
+/* Copy across ring wrap before selecting the boundary: ring end itself may
+ * lie inside a UTF-8 character. Valid text needs at most three bytes trimmed. */
+static size_t PreparePacket(const TextConsole_s *console, uint8_t *packet)
+{
+    size_t count = console->tx_count < TEXT_CONSOLE_PACKET_SIZE ?
+                   console->tx_count : TEXT_CONSOLE_PACKET_SIZE;
+    bool utf8 = false;
+    for (size_t i = 0U; i < count; ++i)
+    {
+        packet[i] = console->tx[(console->tx_head + i) % TEXT_CONSOLE_TX_SIZE];
+        utf8 = utf8 || packet[i] >= 0x80U;
+    }
+    if (utf8)
+    {
+        size_t ceiling = console->port.utf8_packet_size;
+        if (ceiling != 0U && count > ceiling)
+        {
+            count = ceiling;
+        }
+        while (count > 0U && count < console->tx_count &&
+               (console->tx[(console->tx_head + count) % TEXT_CONSOLE_TX_SIZE] & 0xC0U) == 0x80U)
+        {
+            --count;
+        }
+        /* Malformed caller text must not stall the queue indefinitely. */
+        if (count == 0U)
+        {
+            count = 1U;
+        }
+    }
+    return count;
+}
+
 void TextConsolePoll(TextConsole_s *console, uint32_t now_ms)
 {
     uint32_t session = console->port.session(console->port.context);
@@ -97,16 +132,9 @@ void TextConsolePoll(TextConsole_s *console, uint32_t now_ms)
     }
     if (console->tx_count != 0U)
     {
-        size_t count = TEXT_CONSOLE_TX_SIZE - console->tx_head;
-        if (count > console->tx_count)
-        {
-            count = console->tx_count;
-        }
-        if (count > TEXT_CONSOLE_PACKET_SIZE)
-        {
-            count = TEXT_CONSOLE_PACKET_SIZE;
-        }
-        if (console->port.write(console->port.context, console->tx + console->tx_head, count))
+        uint8_t packet[TEXT_CONSOLE_PACKET_SIZE];
+        size_t count = PreparePacket(console, packet);
+        if (console->port.write(console->port.context, packet, count))
         {
             console->tx_head = (console->tx_head + count) % TEXT_CONSOLE_TX_SIZE;
             console->tx_count -= count;

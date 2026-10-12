@@ -38,6 +38,10 @@ typedef enum
     PID_DerivativeFilter = 0b01000000,            // 0100 0000
     PID_ErrorHandle = 0b10000000,                 // 1000 0000
     PID_Continuous = 0x100, /* Opt in: calculate even at zero error; keep holding torque. */
+    /* Opt in: clamp I and reject increments that push the candidate P+I+D
+     * farther into output saturation. Takes precedence over PID_Integral_Limit.
+     * Limits must be finite/nonnegative; downstream limits are not tracked. */
+    PID_ConditionalIntegration = 0x200,
 } PID_Improvement_e;
 
 /* PID 报错类型枚举*/

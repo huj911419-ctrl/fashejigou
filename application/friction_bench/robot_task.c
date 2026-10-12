@@ -3,6 +3,7 @@
 #include "friction.h"
 #include "friction_debug.h"
 #include "friction_config.h"
+#include "friction_remote_bench.h"
 #include "diagnostics.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -22,6 +23,7 @@ static void MotorTask(void *argument)
     {
         if (BENCH_FRICTION_ACTIVE)
         {
+            FrictionRemoteBenchPoll(HAL_GetTick());
             FrictionTask();
         }
         /* Only the control task feeds IWDG: a stalled controller must reset. */
@@ -91,7 +93,6 @@ static void DiagnosticTask(void *argument)
     unsigned length = 0;
     uint8_t overflow = 0;
     uint32_t last_log = HAL_GetTick();
-    FrictionDisable();
     for (;;)
     {
         if (BENCH_ENABLE_VOFA)

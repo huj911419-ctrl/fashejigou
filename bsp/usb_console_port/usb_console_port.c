@@ -197,7 +197,10 @@ static bool Write(void *context, const uint8_t *bytes, size_t size)
 TextConsolePort_s UsbConsolePortInit(void)
 {
     USBD_Interface_fops_HS = (USBD_CDC_ItfTypeDef){Init, DeInit, Control, Receive, TransmitComplete};
-    return (TextConsolePort_s){.session = Session, .read = Read, .write = Write};
+    /* A Chinese transfer fits one full-speed packet without a ZLP boundary.
+     * ASCII CSV can still use the existing 128-byte application transfer. */
+    return (TextConsolePort_s){.session = Session, .read = Read, .write = Write,
+                              .utf8_packet_size = CDC_DATA_FS_MAX_PACKET_SIZE - 1U};
 }
 
 void UsbConsolePortGetStats(UsbConsoleStats_s *stats)

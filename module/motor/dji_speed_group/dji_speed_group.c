@@ -79,7 +79,7 @@ bool DjiSpeedGroupInit(DjiSpeedGroup_s *group, const DjiSpeedMotorConfig_s *conf
                 .Kd = 0.0f,
                 .MaxOut = cfg->current_limit,
                 .IntegralLimit = cfg->current_limit,
-                .Improve = PID_Integral_Limit | PID_Continuous
+                .Improve = PID_Integral_Limit | PID_Continuous | PID_ConditionalIntegration
             }
         };
         group->motor[i] = DJIMotorInit(&init);

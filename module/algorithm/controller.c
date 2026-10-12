@@ -60,6 +60,27 @@ static void f_Integral_Limit(PIDInstance *pid)
     }
 }
 
+/* Conditional integration for callers that explicitly opt in. Decide from
+ * the candidate output and the actual bounded I increment, not Err*Iout:
+ * stored I may be zero or have the opposite sign to the saturated output.
+ * Unwinding remains allowed. No state is shared between controller instances.
+ */
+static void f_Conditional_Integration(PIDInstance *pid)
+{
+    float previous = fmaxf(-pid->IntegralLimit, fminf(pid->IntegralLimit, pid->Iout));
+    float candidate = fmaxf(-pid->IntegralLimit, fminf(pid->IntegralLimit, previous + pid->ITerm));
+    float increment = candidate - previous;
+    float output = pid->Pout + candidate + pid->Dout;
+
+    if ((output > pid->MaxOut && increment > 0.0f) ||
+        (output < -pid->MaxOut && increment < 0.0f))
+    {
+        increment = 0.0f;
+    }
+    pid->Iout = previous;
+    pid->ITerm = increment;
+}
+
 // 微分先行(仅使用反馈值而不计参考输入的微分)
 static void f_Derivative_On_Measurement(PIDInstance *pid)
 {
@@ -178,7 +199,9 @@ float PIDCalculate(PIDInstance *pid, float measure, float ref)
         if (pid->Improve & PID_DerivativeFilter)
             f_Derivative_Filter(pid);
         // 积分限幅
-        if (pid->Improve & PID_Integral_Limit)
+        if (pid->Improve & PID_ConditionalIntegration)
+            f_Conditional_Integration(pid);
+        else if (pid->Improve & PID_Integral_Limit)
             f_Integral_Limit(pid);
 
         pid->Iout += pid->ITerm;                         // 累加积分

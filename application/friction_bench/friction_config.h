@@ -7,25 +7,28 @@
  * Same ID on different buses is legal; duplicate IDs on one bus are rejected.
  * Direction +1/-1 maps positive RPM to the desired contact-surface direction.
  * Gains use degree/s error, current limits use C620 command units, NOT amperes.
- * These are first-pass low-speed bench values; final launch gains still require
- * a loaded-wheel test and chronograph validation.
+ * Startup defaults retain the 2026-10-11 bench tuning: F1/F3 Ki=0.10,
+ * F2 Ki=0.02, and a 2000 RPM/s ramp. Manual single shots were tested at
+ * 5000/6000 RPM; projectile-speed and sustained thermal validation remain.
+ * These defaults do not enable motors or restore a previous speed command.
  */
 #ifndef FRICTION_MOTOR_CONFIGS
 #define FRICTION_MOTOR_CONFIGS { \
-    {.can_bus = 2, .id = 1, .direction = 1, .kp = 1.0f, .ki = 0.00f, .current_limit = 5000.0f}, \
-    {.can_bus = 2, .id = 2, .direction = 1, .kp = 1.0f, .ki = 0.00f, .current_limit = 5000.0f}, \
-    {.can_bus = 2, .id = 3, .direction = 1, .kp = 1.0f, .ki = 0.00f, .current_limit = 5000.0f}  \
+    {.can_bus = 2, .id = 1, .direction = 1, .kp = 2.1f, .ki = 0.10f, .current_limit = 14000.0f}, \
+    {.can_bus = 2, .id = 2, .direction = 1, .kp = 2.1f, .ki = 0.02f, .current_limit = 14000.0f}, \
+    {.can_bus = 2, .id = 3, .direction = 1, .kp = 2.1f, .ki = 0.10f, .current_limit = 14000.0f}  \
 }
 #endif
 
 #define FRICTION_CONTROL_CONFIG { \
-    .max_rpm = 7500.0f, .ramp_rpm_s = 1000.0f, \
+    .max_rpm = 7500.0f, .ramp_rpm_s = 2000.0f, \
     .command_timeout_ms = 250U, .feedback_timeout_ms = 50U, \
     .max_step_ms = 5U, .max_temperature_c = 70U \
 }
 
 #define FRICTION_PERIOD_MS 1U
 #define FRICTION_LOG_PERIOD_MS 200U
+#define FRICTION_DIAGNOSTICS_PERIOD_MS 5000U /* Human log 1; independent of CSV/VOFA. */
 
 /* Online tuning envelope. Current may never exceed each motor's startup limit.
  * Gains remain in degree/s units. These are input bounds, not recommended gains. */
@@ -35,7 +38,7 @@
 #define FRICTION_TUNE_RAMP_MAX 2000.0f
 #define FRICTION_VOFA_PERIOD_MS 20U /* 50 Hz, 180 bytes/frame */
 
-/* Provisional low-speed bench thresholds, NOT calibrated launch thresholds.
+/* Bench speed-stability thresholds, NOT calibrated launch thresholds.
  * Reaching the final target is required; tracking a still-rising ramp is not.
  * Hysteresis: enter at max(10 rpm, 2%), leave at max(20 rpm, 4%). */
 #define FRICTION_READY_CONFIG { \

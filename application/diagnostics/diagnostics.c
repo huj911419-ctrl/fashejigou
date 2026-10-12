@@ -3,14 +3,15 @@
 #include "board_status.h"
 #include "usb_console_port.h"
 #include "runtime_events.h"
-#include "friction.h"
-#include "main.h"
 #include <string.h>
-#include <stdlib.h>
 
 static TextConsole_s console;
 static const char *profile;
 static DiagnosticsReport_f report_profile;
+static DiagnosticsReport_f status_report;
+static DiagnosticsCommand_f command_profile;
+static DiagnosticsReport_f periodic_report;
+static uint32_t periodic_interval_ms;
 static uint32_t period_ms = 1000U;
 static uint32_t last_report_ms;
 static uint32_t report_number;
@@ -21,11 +22,15 @@ static bool have_poll;
 static bool streaming = true;
 static EventHistorySnapshot_s event_snapshot; /* Diagnostic task owns this copy, not its stack. */
 
-static void Version(void)
+static void Version(uint32_t now_ms)
 {
-    TextConsolePrint(&console, "[firmware] profile=%s console=1 build=%s %s", profile, __DATE__, __TIME__);
-    TextConsolePrint(&console, "[USB] friction commands: off; set <mask> <rpm1> <rpm2> <rpm3>; pid <wheel> <kp> <ki> <kd> <limit>; ramp <rpm_s>");
-    TextConsolePrint(&console, "[units] mrad=0.001rad; mm_s2=0.001m/s^2; milli=0.001; cC=0.01C; all commands read-only for actuators");
+    TextConsolePrint(&console, "[firmware] profile=%s console=2 build=%s %s", profile, __DATE__, __TIME__);
+    TextConsolePrint(&console, "[USB] queries: help/version/status/status raw/events/ping; stream on/off; period 200..10000");
+    TextConsolePrint(&console, "[units] mrad=0.001rad; mm_s2=0.001m/s^2; milli=0.001; cC=0.01C; queries do not renew motor commands");
+    if (command_profile != NULL)
+    {
+        (void)command_profile(&console, "help", now_ms);
+    }
 }
 
 static void BoardReport(void)
@@ -75,10 +80,22 @@ static void BoardReport(void)
     TextConsolePrint(&console, "[unmonitored] voltage ADC, RS485, LCD, flash, camera, referee, vision, feeder, pitch motor");
 }
 
-static void Report(uint32_t now_ms)
+static void Report(uint32_t now_ms, bool raw)
 {
     ++report_number;
     uint32_t dropped_before = console.dropped_lines;
+    if (status_report != NULL && !raw)
+    {
+        TextConsolePrint(&console, "%s", "");
+        TextConsolePrint(&console, "-------- 状态 #%lu --------", (unsigned long)report_number);
+        status_report(&console, now_ms);
+        if (console.dropped_lines != dropped_before)
+        {
+            TextConsolePrint(&console, "报告不完整，请稍后重新查询。");
+        }
+        TextConsolePrint(&console, "--------------------------");
+        return;
+    }
     TextConsolePrint(&console, "=== status #%lu profile=%s uptime_ms=%lu ===",
                      (unsigned long)report_number, profile, (unsigned long)now_ms);
     TextConsolePrint(&console, "[modules] usb=%u board_diagnostics=%u rtt_log=%u events=%u",
@@ -90,6 +107,10 @@ static void Report(uint32_t now_ms)
                      (unsigned long)period_ms, streaming, (unsigned long)skipped_reports,
                      (unsigned long)console.dropped_lines, (unsigned long)console.rejected_commands,
                      (unsigned long)TextConsolePending(&console));
+    if (console.dropped_lines != dropped_before)
+    {
+        TextConsolePrint(&console, "[输出提醒] 本报告有行未能排队，内容不完整；稍后重新查询。");
+    }
     TextConsolePrint(&console, "=== end #%lu complete=%u ===", (unsigned long)report_number,
                      console.dropped_lines == dropped_before);
 }
@@ -139,11 +160,11 @@ static void Command(void *context, const char *line, uint32_t now_ms)
             TextConsolePrint(&console, "[BUSY] previous output draining; retry events");
         }
     }
-    else if (strcmp(line, "status") == 0)
+    else if (strcmp(line, "status") == 0 || strcmp(line, "status raw") == 0)
     {
         if (TextConsolePending(&console) == 0U)
         {
-            Report(now_ms);
+            Report(now_ms, strcmp(line, "status raw") == 0);
             last_report_ms = now_ms;
         }
         else
@@ -157,29 +178,12 @@ static void Command(void *context, const char *line, uint32_t now_ms)
     }
     else if (strcmp(line, "help") == 0 || strcmp(line, "version") == 0)
     {
-        Version();
+        Version(now_ms);
     }
     else if (strcmp(line, "stream on") == 0 || strcmp(line, "stream off") == 0)
     {
         streaming = strcmp(line, "stream on") == 0;
         TextConsolePrint(&console, "[OK] stream=%u", streaming);
-    }
-    else if (strcmp(line, "off") == 0)
-    {
-        FrictionDisable();
-        TextConsolePrint(&console, "[OK] friction off");
-    }
-    else if (strncmp(line, "set ", 4) == 0 || strncmp(line, "pid ", 4) == 0 ||
-             strncmp(line, "ramp ", 5) == 0)
-    {
-        if (FrictionSubmitFromUsbCommand(line, now_ms))
-        {
-            TextConsolePrint(&console, "[OK] friction command accepted; wait for status enabled_mask before judging output");
-        }
-        else
-        {
-            TextConsolePrint(&console, "[ERR] invalid/busy friction command; use set/pid/ramp syntax from help");
-        }
     }
     else if (strncmp(line, "period ", 7U) == 0)
     {
@@ -205,13 +209,19 @@ static void Command(void *context, const char *line, uint32_t now_ms)
             TextConsolePrint(&console, "[ERR] period requires integer 200..10000 ms");
         }
     }
-    else
+    else if (command_profile == NULL || !command_profile(&console, line, now_ms))
     {
-        TextConsolePrint(&console, "[ERR] unknown command; send help/status/ping/off/set/pid/ramp");
+        TextConsolePrint(&console, "[ERR] unknown command; send help");
     }
 }
 
 bool DiagnosticsInit(const char *profile_name, DiagnosticsReport_f report)
+{
+    return DiagnosticsInitWithCommands(profile_name, report, NULL);
+}
+
+bool DiagnosticsInitWithCommands(const char *profile_name, DiagnosticsReport_f report,
+                                 DiagnosticsCommand_f command)
 {
     if (!BENCH_ENABLE_USB)
     {
@@ -223,8 +233,44 @@ bool DiagnosticsInit(const char *profile_name, DiagnosticsReport_f report)
     }
     profile = profile_name;
     report_profile = report;
+    status_report = NULL;
+    command_profile = command;
+    periodic_report = NULL;
+    periodic_interval_ms = 0U;
+    period_ms = 1000U;
+    last_report_ms = 0U;
+    report_number = 0U;
+    skipped_reports = 0U;
+    last_poll_ms = 0U;
+    max_poll_gap_ms = 0U;
+    have_poll = false;
+    streaming = true;
     TextConsolePort_s port = UsbConsolePortInit();
     return TextConsoleInit(&console, &port, Command, NULL);
+}
+
+void DiagnosticsSetPeriodicReport(DiagnosticsReport_f report, uint32_t interval_ms)
+{
+    periodic_report = report;
+    periodic_interval_ms = interval_ms;
+    last_report_ms = last_poll_ms;
+}
+
+bool DiagnosticsSetStatusReport(DiagnosticsReport_f report, uint32_t interval_ms)
+{
+    if (interval_ms < 200U || interval_ms > 10000U)
+    {
+        return false;
+    }
+    status_report = report;
+    period_ms = interval_ms;
+    last_report_ms = last_poll_ms;
+    return true;
+}
+
+uint32_t DiagnosticsSkippedReports(void)
+{
+    return skipped_reports;
 }
 
 void DiagnosticsPoll(uint32_t now_ms)
@@ -242,16 +288,24 @@ void DiagnosticsPoll(uint32_t now_ms)
     TextConsolePoll(&console, now_ms);
     if (TextConsoleTakeConnected(&console))
     {
-        Version();
-        Report(now_ms);
+        Version(now_ms);
+        Report(now_ms, false);
         last_report_ms = now_ms;
     }
-    else if (console.session != 0U && streaming && now_ms - last_report_ms >= period_ms)
+    else if (console.session != 0U && streaming &&
+             now_ms - last_report_ms >= (periodic_report != NULL ? periodic_interval_ms : period_ms))
     {
         last_report_ms = now_ms;
         if (TextConsolePending(&console) == 0U)
         {
-            Report(now_ms);
+            if (periodic_report != NULL)
+            {
+                periodic_report(&console, now_ms);
+            }
+            else
+            {
+                Report(now_ms, false);
+            }
         }
         else
         {

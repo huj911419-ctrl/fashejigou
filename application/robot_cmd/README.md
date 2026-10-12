@@ -6,6 +6,10 @@
 当前实现是 `gimbal_remote.c`：接收 DBUS 字节，解析通道和 S1，处理方向和死区，
 生成一份 `GimbalCommand_s`。它没有电机对象，也不能发送 CAN 或直接使能电机。
 
+摩擦轮独立输入在 `friction_remote.[ch]`：S1/S2、CH1 死区和正向转速目标、
+原始帧超时、物理 OFF + 回中解锁。输出自己的纯 C 请求类型，不依赖摩擦轮执行核心。
+轮掩码和来源邮箱由 `friction_remote_bench` 接入；操作/移植见 [REMOTE.md](../friction_bench/REMOTE.md)。
+
 ```text
 遥控字节
   → GimbalRemoteReceiveByte：得到通道、开关、原始接收时间

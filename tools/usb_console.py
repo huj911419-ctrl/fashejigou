@@ -21,6 +21,11 @@ import time
 def allowed_command(line: str) -> bool:
     if line in {"help", "status", "events", "ping", "version", "stream on", "stream off"}:
         return True
+    if line in {"log 1", "log 2"}:
+        return True
+    log_period = re.fullmatch(r"log period ([0-9]{2,4})", line)
+    if log_period is not None:
+        return 20 <= int(log_period[1]) <= 1000
     match = re.fullmatch(r"period ([0-9]{3,5})", line)
     return match is not None and 200 <= int(match[1]) <= 10000
 
@@ -73,7 +78,7 @@ def main() -> int:
             args.log.parent.mkdir(parents=True, exist_ok=True)
             log = args.log.open("a", encoding="utf-8")
         threading.Thread(target=input_worker, args=(commands,), daemon=True).start()
-        emit("[PC] commands: help/status/events/ping/version/stream on/stream off/period 200..10000; exit quits locally")
+        emit("[PC] queries: help/status/events/ping/version/stream on/stream off/period 200..10000/log 1/log 2/log period 20..1000; exit quits locally")
         retry_at = 0.0
         while True:
             # Handle local exit even while disconnected. Never replay commands on reconnect.
@@ -123,7 +128,7 @@ def main() -> int:
                 while b"\n" in partial:
                     line, _, remaining = partial.partition(b"\n")
                     partial = bytearray(remaining)
-                    emit(line.rstrip(b"\r").decode("ascii", errors="replace"))
+                    emit(line.rstrip(b"\r").decode("utf-8", errors="replace"))
                 if len(partial) > 16384:
                     partial.clear()
                     emit("[PC] discarded oversized unterminated input; check firmware/protocol")

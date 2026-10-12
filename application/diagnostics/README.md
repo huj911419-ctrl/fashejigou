@@ -1,8 +1,9 @@
 # USB 硬件诊断
 
 面向独立 `gimbal_bench` 和 `friction_bench` 固件，共用诊断框架，各自报告自己的设备。
-默认每 1000 ms 输出一份详细报告。所有 USB 命令只影响诊断显示，不使能电机、不刷新控制命令租约、不修改 PID、不自动清除故障。
-原有遥控器、摩擦轮 RTT/VOFA 控制入口仍按各自规则工作。
+默认每 1000 ms 输出一份详细报告。诊断查询不使能电机、不刷新控制命令租约、不修改 PID、不自动清除故障。
+摩擦轮固件另有 USB `off/set/pid/ramp` 控制命令，原有语法保持；云台固件不注册这些命令。
+新增 [摩擦轮 USB 日志](../friction_bench/USB_LOG.md)：`log 1` 输出故障原因，`log 2` 输出可复制给 AI 的运行数据和每秒摘要；UART VOFA 保持原样。
 
 模块选择见 [`bench_features.h`](../bench_features.h) 和 [逐项验证说明](../../docs/architecture/module-switches.md)。USB、板级诊断和事件记录可分别关闭；状态报告中的 `DISABLED` 表示本次构建主动关闭，不是设备离线。USB=0 时不枚举 CDC，也没有 USB 报告。
 
@@ -10,7 +11,7 @@
 
 1. 编译、烧录实际要用的独立固件：`make -f Makefile.gimbal` 或 `make -f Makefile.friction`。它们仍是两套独立固件，不会同时驱动两套机构。
 2. 用支持数据传输的 USB 线连接 DM-MC02 板卡原生 USB 与电脑。无需选择调试 UART。
-3. 在设备管理器找到新增的 COM 口，使用任意文本串口终端打开，选择 115200、8N1，发送结尾加换行。固件默认持续报告；没有开机横幅也可发 `version` 或 `status`。
+3. 在设备管理器找到新增的 COM 口，使用任意文本串口终端打开，选择 115200、8N1、UTF-8，发送结尾加换行。固件默认持续报告；没有开机横幅也可发 `version` 或 `status`。
 4. 先发 `ping`，收到 `[pong]` 说明电脑发送、板端解析和回复这条链路工作。再看 `status` 里的各设备反馈。
 
 USB 使用 STM32 CDC 虚拟串口，115200 是终端设置值，不决定 USB 总线速率，也不会配置 UART5。
@@ -40,10 +41,14 @@ python tools/usb_console.py --port COM7 --log logs/board.txt
 | --- | --- |
 | `help` / `version` | 固件应用名、构建时间、协议版本、单位、命令表 |
 | `ping` | 回复板端开机时间，检查往返通信 |
-| `status` | 立即生成完整报告；前一份尚未发完时回复 BUSY，请稍后重试 |
+| `status` | 查询报告；摩擦轮用简短中文，云台沿用原格式；前一份未发完时回复 BUSY，请稍后重试 |
+| `status detail` | 仅摩擦轮：手动查询详细中文状态及参数 |
+| `status raw` | 查询原始完整字段；云台与 `status` 相同 |
 | `events` | 查询 RAM 最近 32 条状态首次观测/变化；记录满后覆盖最旧条目，复位丢失历史 |
 | `stream on` / `stream off` | 开启/关闭周期报告，仍可手动查询 |
-| `period 200` | 周期改为 200 ms，允许 200～10000 ms，默认 1000 ms |
+| `period 5000` | 状态报告周期改为5秒，允许200～10000 ms；摩擦轮默认5000 ms，云台默认1000 ms |
+| `log 1` / `log 2` | 仅摩擦轮：故障报告 / AI 运行日志，不改变电机运行状态 |
+| `log period 20` | 仅摩擦轮：运行日志周期 20～1000 ms，默认 20 ms |
 
 周期设置仅存在 RAM，不写 Flash；重新开串口保留设置，板卡复位恢复默认。重新枚举或 DTR 改变会开始一个新诊断会话并重新输出横幅。
 DTR 不作为发送必需条件，兼容不置 DTR 的串口助手。部分终端只关窗口、不通知设备；此时用 `version` 查询。
@@ -74,7 +79,7 @@ CR、LF、CRLF 均可结束命令。最长 79 个可打印 ASCII 字符；非法
 
 状态含义严格区分：
 
-- `UNCONFIGURED`：尚未填 ID 等必需配置。当前三个摩擦轮 ID 仍是 0，由用户填写，不能据此诊断接线故障。
+- `UNCONFIGURED`：尚未填 ID 等必需配置。以当前配置报告为准，不能据此诊断接线故障。
 - `NOT_STARTED` / `NOT_MONITORED` / `NOT_ENABLED`：此固件没有启动、观察或启用该功能，不冒充离线故障。
 - `STARTED_NO_LINK_PROOF`：CAN 控制器已经启动，但这不足以证明电机响应；看具体设备有效反馈。
 - `NO_BYTES`：遥控 UART 没收到字节；`NO_FRESH_VALID_FRAME`：没有新鲜有效 DBUS 帧，可能协议/格式错误或已断线。
@@ -126,7 +131,7 @@ CR、LF、CRLF 均可结束命令。最长 79 个可打印 ASCII 字符；非法
 ```text
 应用快照 ──> gimbal_diagnostics / friction_diagnostics
                   │
-            diagnostics（只读命令、报告周期）
+            diagnostics（查询、报告周期、应用命令钩子）
                   │
             text_console（纯 C，实例、队列、组行）
                   │

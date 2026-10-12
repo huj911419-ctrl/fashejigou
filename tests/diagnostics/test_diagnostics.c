@@ -193,7 +193,7 @@ int main(void)
     strcpy(input, "status\n");
     input_size = strlen(input); /* Host queries immediately as the port opens. */
     Drain();
-    assert(strstr(output, "[F1] UNCONFIGURED") != NULL);
+    assert(strstr(output, "[F1] NO_FEEDBACK") != NULL);
     assert(strstr(output, "[CAN1] BUS_OFF") != NULL);
     assert(strstr(output, "voltage=NOT_MEASURED") != NULL);
     assert(strstr(output, "dropped_lines=0") != NULL);
@@ -221,7 +221,7 @@ int main(void)
     Send("ping\n");
     assert(strstr(output, "[pong] uptime_ms=5000") != NULL);
     Send("set 7 100 100 100\nreboot\n");
-    assert(strstr(output, "unknown read-only command") != NULL);
+    assert(strstr(output, "unknown command") != NULL);
     Send("status\n");
     assert(strstr(output, "complete=1") != NULL);
 

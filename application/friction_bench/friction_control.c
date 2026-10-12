@@ -8,6 +8,7 @@ void FrictionControlInit(Friction_Control_s *control, uint32_t now_ms)
     control->last_step_ms = now_ms;
     /* An explicit disabled command must be observed before first enable. */
     control->require_disable = 1;
+    control->status.rearm_required = 1;
 }
 
 static uint8_t ConfigValid(const Friction_Control_Config_s *config)
@@ -30,6 +31,7 @@ void FrictionControlStep(Friction_Control_s *control,
     LoopStatsObserve(&status->timing, now_ms, config->max_step_ms);
     uint32_t fault = external_fault;
     uint8_t mask = command->enable_mask;
+    status->requested_mask = mask;
     status->step_ms = now_ms - control->last_step_ms;
     control->last_step_ms = now_ms;
     status->command_age_ms = now_ms - command_ms;
@@ -65,6 +67,7 @@ void FrictionControlStep(Friction_Control_s *control,
             fault |= FRICTION_FAULT_TIMING;
     }
 
+    status->active_fault = fault;
     if (fault)
     {
         status->fault |= fault;
@@ -78,6 +81,7 @@ void FrictionControlStep(Friction_Control_s *control,
     }
 
     status->enabled_mask = control->require_disable ? 0 : mask;
+    status->rearm_required = control->require_disable;
     for (unsigned i = 0; i < FRICTION_MOTOR_COUNT; ++i)
     {
         if (!(status->enabled_mask & (1U << i)))

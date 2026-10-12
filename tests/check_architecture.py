@@ -26,6 +26,8 @@ PURE_FILES = (
     "application/friction_bench/friction_control.h",
     "application/friction_bench/friction_monitor.c",
     "application/friction_bench/friction_monitor.h",
+    "application/friction_bench/friction_log_stats.c",
+    "application/friction_bench/friction_log_stats.h",
 )
 ADAPTER_FREE_BUSINESS = (
     "application/parameters/friction_profile_service.c",
@@ -34,6 +36,12 @@ ADAPTER_FREE_BUSINESS = (
     "application/runtime/runtime_events.h",
     "application/friction_bench/friction.c",
     "application/friction_bench/friction.h",
+    "application/friction_bench/friction_usb_command.c",
+    "application/friction_bench/friction_usb_command.h",
+    "application/friction_bench/friction_usb_log.c",
+    "application/friction_bench/friction_usb_log.h",
+    "application/friction_bench/friction_remote_bench.c",
+    "application/friction_bench/friction_remote_bench.h",
     "application/gimbal_bench/gimbal.c",
     "application/gimbal_bench/gimbal.h",
     "application/gimbal_bench/gimbal_imu.c",
@@ -77,7 +85,7 @@ def main():
                     errors.append(f"{label}:{line}: command-source dependency in actuator core")
                 if label.startswith("application/robot_cmd/") and header in (
                     "gimbal_control.h", "dm_velocity.h", "yaw_rate.h", "gimbal.h",
-                    "dji_speed_group.h", "runtime_events.h",
+                    "dji_speed_group.h", "runtime_events.h", "friction.h", "friction_control.h",
                 ):
                     errors.append(f"{label}:{line}: actuator/runtime dependency in command producer")
                 if header.startswith("bsp_") or header in ("control_platform.h", "gimbal_port.h", "imu_port.h"):

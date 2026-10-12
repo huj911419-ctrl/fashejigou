@@ -50,11 +50,14 @@ typedef struct
     float reference_rpm[FRICTION_MOTOR_COUNT];
     Friction_Feedback_s feedback[FRICTION_MOTOR_COUNT];
     uint32_t fault;
+    uint32_t active_fault; /* This step's causes; fault also retains old causes. */
     uint32_t command_age_ms;
     uint32_t step_ms;
     LoopStats_s timing;
     uint8_t online_mask;
     uint8_t enabled_mask;
+    uint8_t requested_mask;
+    uint8_t rearm_required;
 } Friction_Status_s;
 
 typedef struct

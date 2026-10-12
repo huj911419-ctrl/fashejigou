@@ -5,6 +5,8 @@
 #include <stdint.h>
 
 #define DJI_SPEED_GROUP_CAPACITY 3U
+/* Logged independently of tunable gains to distinguish control behavior. */
+#define DJI_SPEED_GROUP_CONTROL_POLICY "speed_pid_conditional_v1"
 
 typedef struct
 {

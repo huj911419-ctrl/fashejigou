@@ -406,8 +406,10 @@ void UART7_IRQHandler(void)
 void USART10_IRQHandler(void)
 {
   /* USER CODE BEGIN USART10_IRQn 0 */
+#if defined(ROBOT_FRICTION_BENCH)
   extern void FrictionVofaUart10RxCallback(void);
   FrictionVofaUart10RxCallback();
+#endif
   /* USER CODE END USART10_IRQn 0 */
   HAL_UART_IRQHandler(&huart10);
   /* USER CODE BEGIN USART10_IRQn 1 */

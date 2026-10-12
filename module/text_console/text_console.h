@@ -19,6 +19,10 @@ typedef struct
     size_t (*read)(void *context, uint8_t *bytes, size_t capacity, bool *lost);
     /* All-or-none acceptance; MUST copy bytes before returning true. */
     bool (*write)(void *context, const uint8_t *bytes, size_t size);
+    /* UTF-8 transfer ceiling: 0 uses PACKET_SIZE; otherwise 4..PACKET_SIZE.
+     * Use less than the physical endpoint size when receivers decode each
+     * transfer separately. ASCII-only chunks retain PACKET_SIZE throughput. */
+    size_t utf8_packet_size;
 } TextConsolePort_s;
 
 typedef void (*TextConsoleCommand_f)(void *context, const char *line, uint32_t now_ms);
@@ -50,7 +54,9 @@ typedef struct
  * Poll processes <=64 RX bytes, <=2 commands and <=128 TX bytes per call.
  * Partial/invalid/overlong commands are discarded through the next newline.
  * Session changes discard old output/partial commands and defer RX until the
- * next Poll so the owner can consume the connected event and queue a banner. */
+ * next Poll so the owner can consume the connected event and queue a banner.
+ * Valid UTF-8 output is never split inside a character, even at ring wrap.
+ * Receiving software must still preserve partial characters between reads. */
 bool TextConsoleInit(TextConsole_s *console, const TextConsolePort_s *port,
                      TextConsoleCommand_f command, void *context);
 void TextConsolePoll(TextConsole_s *console, uint32_t now_ms);

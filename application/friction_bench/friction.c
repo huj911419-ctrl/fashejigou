@@ -5,7 +5,6 @@
 #include "control_platform.h"
 #include "runtime_events.h"
 #include <math.h>
-#include <stdlib.h>
 #include <string.h>
 
 static const DjiSpeedMotorConfig_s motor_config[FRICTION_MOTOR_COUNT] = FRICTION_MOTOR_CONFIGS;
@@ -31,8 +30,9 @@ static uint16_t pending_tune_sequence;
 static uint8_t tuning_pending;
 static uint8_t profile_pending;
 static Friction_Command_Source_e command_source =
-    BENCH_FRICTION_ACTIVE && BENCH_ENABLE_USB ? FRICTION_SOURCE_USB :
-    (BENCH_FRICTION_ACTIVE && BENCH_ENABLE_RTT_COMMAND ? FRICTION_SOURCE_RTT : FRICTION_SOURCE_NONE);
+    BENCH_FRICTION_REMOTE_ACTIVE ? FRICTION_SOURCE_REMOTE :
+    (BENCH_FRICTION_ACTIVE && BENCH_ENABLE_USB ? FRICTION_SOURCE_USB :
+     (BENCH_FRICTION_ACTIVE && BENCH_ENABLE_RTT_COMMAND ? FRICTION_SOURCE_RTT : FRICTION_SOURCE_NONE));
 static uint32_t source_epoch;
 static uint8_t source_requires_off;
 
@@ -71,9 +71,27 @@ uint8_t FrictionInit(void)
     if (!monitor_ready || !DjiSpeedGroupInit(&motors, selected, count))
     {
         published_status.fault = FRICTION_FAULT_CONFIG;
+        published_status.active_fault = FRICTION_FAULT_CONFIG;
         return 0;
     }
 
+    /* Before any task runs, explicitly initialize the controller with OFF.
+     * This sends no motor output and leaves no pending stop to discard the
+     * first received RUN. Runtime stops and fault rearm keep their normal gate. */
+    uint32_t startup_ms = ControlPlatformNowMs();
+    const Friction_Command_s stopped = {0};
+    const Friction_Feedback_s feedback[FRICTION_MOTOR_COUNT] = {0};
+    FrictionControlStep(&control, &control_config, &stopped, startup_ms,
+                        feedback, startup_ms, 0U);
+    pending_command = stopped;
+    command_ms = startup_ms;
+    command_received = 1;
+    ++generation;
+    published_status = control.status;
+    if (BENCH_SPEED_READY_ACTIVE)
+    {
+        FrictionMonitorUpdate(&monitor, &control.status, startup_ms);
+    }
     initialized = 1;
     telemetry.readiness = monitor.status;
     return 1;
@@ -92,14 +110,19 @@ static void StopLocked(uint32_t received_ms)
     stop_ms = received_ms;
 }
 
-Friction_Submit_Result_e FrictionSelectSource(Friction_Command_Source_e source)
+static bool SourceAvailable(Friction_Command_Source_e source)
 {
-    bool available = source == FRICTION_SOURCE_NONE ||
+    return source == FRICTION_SOURCE_NONE ||
         (BENCH_FRICTION_ACTIVE &&
          ((source == FRICTION_SOURCE_RTT && BENCH_ENABLE_RTT_COMMAND) ||
           (source == FRICTION_SOURCE_VOFA && BENCH_ENABLE_VOFA) ||
-          (source == FRICTION_SOURCE_USB && BENCH_ENABLE_USB)));
-    if (!available)
+          (source == FRICTION_SOURCE_USB && BENCH_ENABLE_USB) ||
+          (source == FRICTION_SOURCE_REMOTE && BENCH_FRICTION_REMOTE_ACTIVE)));
+}
+
+Friction_Submit_Result_e FrictionSelectSource(Friction_Command_Source_e source)
+{
+    if (!SourceAvailable(source))
     {
         return FRICTION_SUBMIT_UNAVAILABLE;
     }
@@ -146,7 +169,8 @@ Friction_Submit_Result_e FrictionSubmitFrom(Friction_Command_Source_e source,
     }
     uint32_t lock = ControlPlatformEnter();
     bool fresh = ControlPlatformNowMs() - received_ms <= control_config.command_timeout_ms;
-    bool owner = source != FRICTION_SOURCE_NONE && (command_source == FRICTION_SOURCE_NONE || source == command_source);
+    bool owner = source != FRICTION_SOURCE_NONE &&
+        (source == command_source || (command_source == FRICTION_SOURCE_NONE && source != FRICTION_SOURCE_REMOTE));
     Friction_Submit_Result_e result = FRICTION_SUBMIT_ACCEPTED;
     if (!command->enable_mask)
     {
@@ -156,6 +180,10 @@ Friction_Submit_Result_e FrictionSubmitFrom(Friction_Command_Source_e source,
         }
         StopLocked(received_ms);
         result = fresh ? FRICTION_SUBMIT_ACCEPTED : FRICTION_SUBMIT_STALE;
+    }
+    else if (!SourceAvailable(source))
+    {
+        result = FRICTION_SUBMIT_UNAVAILABLE;
     }
     else if (!owner)
     {
@@ -193,157 +221,37 @@ void FrictionSubmit(const Friction_Command_s *command)
     (void)FrictionSubmitFrom(FRICTION_SOURCE_RTT, command, ControlPlatformNowMs());
 }
 
-static const char *ParseFloat(const char *cursor, float *value)
-{
-    char *end;
-    if (cursor == NULL || value == NULL)
-    {
-        return NULL;
-    }
-    while (*cursor == ' ' || *cursor == '\t')
-    {
-        ++cursor;
-    }
-    *value = strtof(cursor, &end);
-    if (end == cursor || !isfinite(*value))
-    {
-        return NULL;
-    }
-    return end;
-}
-
-static const char *ParseUnsigned(const char *cursor, unsigned *value)
-{
-    char *end;
-    unsigned long parsed;
-    if (cursor == NULL || value == NULL)
-    {
-        return NULL;
-    }
-    while (*cursor == ' ' || *cursor == '\t')
-    {
-        ++cursor;
-    }
-    parsed = strtoul(cursor, &end, 10);
-    if (end == cursor || parsed > 65535UL)
-    {
-        return NULL;
-    }
-    *value = (unsigned)parsed;
-    return end;
-}
-
-static uint8_t EndOfLine(const char *cursor)
-{
-    while (cursor != NULL && (*cursor == ' ' || *cursor == '\t'))
-    {
-        ++cursor;
-    }
-    return cursor != NULL && *cursor == '\0';
-}
-
-uint8_t FrictionSubmitFromUsbCommand(const char *line, uint32_t now_ms)
-{
-    static uint16_t sequence;
-    const char *cursor = line;
-    float value;
-    unsigned wheel;
-    Friction_Telemetry_s telemetry;
-    Friction_Tuning_s tuning;
-
-    if (!BENCH_ENABLE_USB || line == NULL)
-    {
-        return 0U;
-    }
-    if (strcmp(line, "off") == 0)
-    {
-        const Friction_Command_s stopped = {0};
-        return FrictionSubmitFrom(FRICTION_SOURCE_USB, &stopped, now_ms) == FRICTION_SUBMIT_ACCEPTED;
-    }
-    if (strncmp(line, "set", 3U) == 0 && (line[3] == ' ' || line[3] == '\t'))
-    {
-        unsigned mask;
-        Friction_Command_s command;
-        cursor = ParseUnsigned(line + 3U, &mask);
-        if (cursor == NULL || mask > FRICTION_ALL_MOTORS)
-        {
-            return 0U;
-        }
-        command.enable_mask = (uint8_t)mask;
-        for (unsigned i = 0U; i < FRICTION_MOTOR_COUNT; ++i)
-        {
-            cursor = ParseFloat(cursor, &command.target_rpm[i]);
-            if (cursor == NULL)
-            {
-                return 0U;
-            }
-        }
-        if (!EndOfLine(cursor))
-        {
-            return 0U;
-        }
-        return FrictionSubmitFrom(FRICTION_SOURCE_USB, &command, now_ms) == FRICTION_SUBMIT_ACCEPTED;
-    }
-    if (strncmp(line, "ramp", 4U) == 0 && (line[4] == ' ' || line[4] == '\t'))
-    {
-        cursor = ParseFloat(line + 4U, &value);
-        if (cursor == NULL || !EndOfLine(cursor))
-        {
-            return 0U;
-        }
-        FrictionGetTelemetry(&telemetry);
-        tuning = telemetry.tuning;
-        tuning.ramp_rpm_s = value;
-        if (sequence == UINT16_MAX)
-        {
-            sequence = 1U;
-        }
-        else
-        {
-            ++sequence;
-        }
-        return FrictionQueueTuning(&tuning, sequence, telemetry.applied_sequence) == FRICTION_TUNE_QUEUED;
-    }
-    if (strncmp(line, "pid", 3U) == 0 && (line[3] == ' ' || line[3] == '\t'))
-    {
-        cursor = ParseUnsigned(line + 3U, &wheel);
-        if (cursor == NULL || wheel < 1U || wheel > FRICTION_MOTOR_COUNT)
-        {
-            return 0U;
-        }
-        FrictionGetTelemetry(&telemetry);
-        tuning = telemetry.tuning;
-        cursor = ParseFloat(cursor, &tuning.motor[wheel - 1U].kp);
-        if (cursor == NULL) return 0U;
-        cursor = ParseFloat(cursor, &tuning.motor[wheel - 1U].ki);
-        if (cursor == NULL) return 0U;
-        cursor = ParseFloat(cursor, &tuning.motor[wheel - 1U].kd);
-        if (cursor == NULL) return 0U;
-        cursor = ParseFloat(cursor, &tuning.motor[wheel - 1U].current_limit);
-        if (cursor == NULL || !EndOfLine(cursor)) return 0U;
-        if (sequence == UINT16_MAX)
-        {
-            sequence = 1U;
-        }
-        else
-        {
-            ++sequence;
-        }
-        return FrictionQueueTuning(&tuning, sequence, telemetry.applied_sequence) == FRICTION_TUNE_QUEUED;
-    }
-    return 0U;
-}
-
 void FrictionDisable(void)
 {
     if (BENCH_FRICTION_ACTIVE)
     {
         uint32_t lock = ControlPlatformEnter();
         source_requires_off = 0;
+        if (command_source != FRICTION_SOURCE_NONE)
+        {
+            ++source_epoch;
+        }
         command_source = FRICTION_SOURCE_NONE;
         StopLocked(ControlPlatformNowMs());
         ControlPlatformExit(lock);
     }
+}
+
+void FrictionStopFromUsb(void)
+{
+    if (!BENCH_FRICTION_ACTIVE || !BENCH_ENABLE_USB)
+    {
+        return;
+    }
+    uint32_t lock = ControlPlatformEnter();
+    if (command_source != FRICTION_SOURCE_USB && command_source != FRICTION_SOURCE_NONE)
+    {
+        command_source = FRICTION_SOURCE_NONE;
+        ++source_epoch;
+    }
+    source_requires_off = 0;
+    StopLocked(ControlPlatformNowMs());
+    ControlPlatformExit(lock);
 }
 
 void FrictionGetStatus(Friction_Status_s *status)
@@ -369,6 +277,11 @@ void FrictionGetTelemetry(Friction_Telemetry_s *result)
     result->command_source = command_source;
     result->source_epoch = source_epoch;
     result->source_requires_off = source_requires_off;
+    result->initialized = initialized;
+    result->command_received_now = command_received;
+    result->pending_mask_now = pending_command.enable_mask;
+    result->tuning_pending_now = tuning_pending;
+    result->profile_pending_now = profile_pending;
     ControlPlatformExit(lock);
 }
 
@@ -499,7 +412,7 @@ static void ApplyTuning(const Friction_Tuning_s *tuning)
 }
 
 static void PublishTelemetry(uint8_t applied_tuning, const Friction_Tuning_s *tuning,
-                              uint16_t tune_sequence)
+                              uint16_t tune_sequence, uint32_t sampled_generation)
 {
     /* Only this task writes telemetry. Build the sample before taking the short
      * publication lock; readers can only access it through the snapshot APIs. */
@@ -508,6 +421,7 @@ static void PublishTelemetry(uint8_t applied_tuning, const Friction_Tuning_s *tu
     sample.readiness = monitor.status;
     sample.sample_ms = ControlPlatformNowMs();
     ++sample.sample_id;
+    sample.command_generation = sampled_generation;
     if (applied_tuning)
     {
         sample.tuning = *tuning;
@@ -624,7 +538,9 @@ void FrictionTask(void)
     if (!DjiSpeedGroupControl())
     {
         control.status.fault |= FRICTION_FAULT_DRIVER;
+        control.status.active_fault |= FRICTION_FAULT_DRIVER;
         control.require_disable = 1;
+        control.status.rearm_required = 1;
         control.status.enabled_mask = 0;
         memset(control.status.reference_rpm, 0, sizeof(control.status.reference_rpm));
         DjiSpeedGroupStop(&motors);
@@ -634,7 +550,7 @@ void FrictionTask(void)
         FrictionMonitorUpdate(&monitor, &control.status, ControlPlatformNowMs());
     }
 
-    PublishTelemetry(apply_tuning, &tuning, tune_sequence);
+    PublishTelemetry(apply_tuning, &tuning, tune_sequence, sampled_generation);
     RuntimeEventsObserve(RUNTIME_FRICTION_FAULT, control.status.fault);
     RuntimeEventsObserve(RUNTIME_FRICTION_ENABLE, control.status.enabled_mask);
     RuntimeEventsObserve(RUNTIME_FRICTION_ONLINE, control.status.online_mask);

@@ -14,6 +14,7 @@
 | `BENCH_ENABLE_RTT_LOG` | 两套 | 关闭应用周期 RTT 日志；旧底层驱动自身的初始化/错误日志仍受原日志系统配置管理 |
 | `BENCH_ENABLE_EVENT_HISTORY` | 两套 | 不追加 RAM 状态历史；USB `events` 回复 DISABLED |
 | `BENCH_ENABLE_REMOTE` | 云台 | 不启动 UART5 接收，不解码 DBUS；不会生成遥控运行命令 |
+| `BENCH_ENABLE_FRICTION_REMOTE` | 摩擦轮 | 不启动 UART5 遥控 RX，保留 USB 控制；与云台遥控开关独立。默认开启后选 REMOTE，操作见 [REMOTE.md](../../application/friction_bench/REMOTE.md) |
 | `BENCH_ENABLE_YAW` | 云台 | 不启动云台 CAN1 服务，不推进 J4310 控制/握手，不发送电机命令；遥控仍能单独观察 |
 | `BENCH_ENABLE_IMU` | 云台 | 不创建 IMU 任务，不访问 BMI088；姿态解算也随之停用 |
 | `BENCH_ENABLE_ATTITUDE` | 云台 | 保留 IMU 原始加速度/角速度/温度采集，关闭零偏校准和姿态解算 |
@@ -57,7 +58,8 @@ USB 报告中的 `[modules]`、`[modules_gimbal]`、`[modules_friction]` 显示�
 在 [`friction_config.h`](../../application/friction_bench/friction_config.h) 只填写 **第二项** 电机的实际 CAN/ID/方向。
 F1、F3 的 ID 可以继续为 0。协议编号仍为 F1/F2/F3，F2 不会因为是唯一开启轮就变成 F1。
 启用掩码使用 2（F1=1、F2=2、F3=4、全部=7）。选中了关闭轮的运行请求会拒绝，不会悄悄改成运行剩下的轮。
-USB 是只读诊断；电机命令仍通过原 RTT 或已绑定的 VOFA，原超时与重新解锁规则继续生效。
+云台 USB 保持只读诊断。摩擦轮 USB 已支持 `off/set/pid/ramp`，并可用 `source usb` / `source remote`
+停机切换输入；UART10 VOFA 当前只输出波形。查询/日志不续期，原超时与重新解锁规则继续生效。
 若尚未绑定 VOFA，设 VOFA=0、RTT_COMMAND=1 即可单独使用 RTT。三轮都关闭与摩擦轮总开关关闭均不会注册/发送电机控制。
 
 ## 开关边界
