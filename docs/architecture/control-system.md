@@ -1,10 +1,12 @@
+> 此文保留早期控制边界设计与后续更新。目录入口和本轮布局取舍见 [布局设计](layout-design.md)；当前功能状态见 [首页](../../README.md)。
+
 # 云台与三摩擦轮：结构、移植边界和后续控制路线
 
 本轮检查日期：2026-09-29。开发基座为本 Meta-Embedded-NG 目录。
 `CtrBoard-H7_CAN` 仅作为已跑通的 J4310/DBUS 硬件参考，未修改。
 
-2026-09-30 更新：已按 [实际开源源码对照](open-source-review.md) 拆分输入命令层与云台执行层。
-下文路线继续适用；最新接口迁移见 [robot_cmd 说明](../../application/robot_cmd/README.md)。
+2026-09-30 更新：已按 [实际开源源码对照](../history/open-source-review.md) 拆分输入命令层与云台执行层。
+下文路线继续适用；最新接口迁移见 [robot_cmd 说明](../../application/commands/README.md)。
 
 ## 当前判断
 
@@ -15,13 +17,13 @@
 | 部分 | 本轮后的移植程度 | 换平台需要做什么 |
 | --- | --- | --- |
 | VOFA、DBUS、速度到位、Yaw 斜坡、DM 协议状态机 | 高：纯 C、调用者持有状态 | 提供时间/数据/发送回调 |
-| `application/gimbal_control` | 高：纯 C、多实例、无静态业务状态 | 传入轴配置和发送回调，按接口喂数据 |
+| `application/gimbal/control` | 高：纯 C、多实例、无静态业务状态 | 传入轴配置和发送回调，按接口喂数据 |
 | 摩擦轮状态机、到位组合 | 高：纯 C | 喂入反馈、命令和同一时钟时间 |
 | BMI088 协议、六轴姿态核心 | 高：纯 C、多实例 | 传输回调、带时间戳的 SI 样本、坐标映射 |
 | `text_console` 文本协议、队列与会话 | 高：纯 C、多实例 | 注入非阻塞 read/write/session 回调 |
 | `yaw_angle` 角度外环核心 | 高：纯 C、多实例；尚未接入电机 | 提供同一连续坐标的目标/测量、有效性、时间和零点参考编号 |
-| `event_history`、`loop_stats` | 高：纯 C、多实例 | 统一时钟、调用者提供同步；[运行准备说明](../../application/runtime/README.md) |
-| USB 诊断报告与硬件观测 | 应用报告读快照，板级状态/CDC/任务单独适配 | 替换 `usb_console_port`、`board_status`、任务入口，见 [诊断说明](../../application/diagnostics/README.md) |
+| `event_history`、`loop_stats` | 高：纯 C、多实例 | 统一时钟、调用者提供同步；[运行准备说明](../../application/services/runtime/README.md) |
+| USB 诊断报告与硬件观测 | 应用报告读快照，板级状态/CDC/任务单独适配 | 替换 `usb_console_port`、`board_status`、任务入口，见 [诊断说明](../../application/services/diagnostics/README.md) |
 | 摩擦轮业务编排 | 中：无 HAL/RTOS 细节，但仍为一个台架实例 | 实现平台接口和 DJI 速度组接口 |
 | `dji_speed_group` 实现、旧 DJI/PID 驱动 | 仍依赖现有 BSP/DWT/驱动 | 适配或替换这一层，保留外部单位约定 |
 | `gimbal_port`、FreeRTOS 任务、CubeMX 外设 | 板级实现，不能直接跨 MCU 复制 | 根据目标板重接外设、IRQ、时钟、调度 |
@@ -52,19 +54,19 @@
 ## 本轮具体变化
 
 ```text
-application/gimbal_bench/       组装配置、任务、诊断快照
-    ├─ application/robot_cmd/        输入解释、方向/死区、带时戳角速度命令
-    │     └─ module/dbus_input/      遥控协议
-    └─ application/gimbal_control/   可移植 Yaw 执行子系统
-          ├─ module/yaw_rate/        限速/斜坡与使能条件
-          └─ module/dm_velocity/     电机协议与反馈状态
+application/gimbal/       组装配置、任务、诊断快照
+    ├─ application/commands/        输入解释、方向/死区、带时戳角速度命令
+    │     └─ module/protocol/dbus_input/      遥控协议
+    └─ application/gimbal/control/   可移植 Yaw 执行子系统
+          ├─ module/control/yaw_rate/        限速/斜坡与使能条件
+          └─ module/protocol/dm_velocity/     电机协议与反馈状态
 
-application/friction_bench/     命令/调参邮箱、三轮业务、到位与诊断
+application/friction/     命令/调参邮箱、三轮业务、到位与诊断
     ├─ friction_control/monitor      纯 C 状态与到位逻辑（同目录文件）
     └─ module/motor/dji_speed_group/  速度/电流单位、PID、DJI 驱动接触点
 
-bsp/control_platform/          单调毫秒时钟、短临界区
-bsp/gimbal_port/               H723 CAN1/UART5 队列和中断适配
+bsp/ports/control_platform/          单调毫秒时钟、短临界区
+bsp/ports/gimbal_port/               H723 CAN1/UART5 队列和中断适配
 tests/                         不带 HAL 的核心测试 + 带传输替身的组合测试
 ```
 
@@ -129,7 +131,7 @@ J4310 速度环在驱动器内部。本阶段没有重复套一层 MCU 速度 PI
 这些是具体下一步，不是都已经实现。本轮没有把它们写成空模块或未经标定的控制器。
 
 后续进展：已补充板载 BMI088 采集、静止零偏和六轴姿态反馈，详见
-[IMU 实现与边界](../../application/gimbal_bench/IMU.md)。尚未完成实物轴向/温漂标定，
+[IMU 实现与边界](../gimbal/IMU.md)。尚未完成实物轴向/温漂标定，
 也未接入电机角度环；原表中的整机姿态控制和实机验收仍待完成。
 
 2026-09-30：补充独立 `yaw_angle` PI 角度外环及离线测试，当前未接入 J4310 输出。

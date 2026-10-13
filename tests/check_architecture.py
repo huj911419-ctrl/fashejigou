@@ -10,42 +10,42 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 PURE_DIRS = (
-    "module/control_authority",
-    "module/parameter_store",
-    "module/vofa", "module/speed_ready", "module/dbus_input",
-    "module/yaw_rate", "module/dm_velocity", "application/gimbal_control",
-    "module/imu_sample", "module/bmi088_sensor", "module/attitude",
-    "module/text_console",
-    "module/loop_stats", "module/event_history", "module/yaw_angle",
-    "application/robot_cmd",
+    "module/control/control_authority",
+    "module/system/parameter_store",
+    "module/protocol/vofa", "module/control/speed_ready", "module/protocol/dbus_input",
+    "module/control/yaw_rate", "module/protocol/dm_velocity", "application/gimbal/control",
+    "module/sensor/imu_sample", "module/sensor/bmi088_sensor", "module/sensor/attitude",
+    "module/protocol/text_console",
+    "module/system/loop_stats", "module/system/event_history", "module/control/yaw_angle",
+    "application/commands",
 )
 PURE_FILES = (
-    "application/parameters/friction_profile.c",
-    "application/parameters/friction_profile.h",
-    "application/friction_bench/friction_control.c",
-    "application/friction_bench/friction_control.h",
-    "application/friction_bench/friction_monitor.c",
-    "application/friction_bench/friction_monitor.h",
-    "application/friction_bench/friction_log_stats.c",
-    "application/friction_bench/friction_log_stats.h",
+    "application/services/parameters/friction_profile.c",
+    "application/services/parameters/friction_profile.h",
+    "application/friction/control/friction_control.c",
+    "application/friction/control/friction_control.h",
+    "application/friction/control/friction_monitor.c",
+    "application/friction/control/friction_monitor.h",
+    "application/friction/diagnostics/friction_log_stats.c",
+    "application/friction/diagnostics/friction_log_stats.h",
 )
 ADAPTER_FREE_BUSINESS = (
-    "application/parameters/friction_profile_service.c",
-    "application/parameters/friction_profile_service.h",
-    "application/runtime/runtime_events.c",
-    "application/runtime/runtime_events.h",
-    "application/friction_bench/friction.c",
-    "application/friction_bench/friction.h",
-    "application/friction_bench/friction_usb_command.c",
-    "application/friction_bench/friction_usb_command.h",
-    "application/friction_bench/friction_usb_log.c",
-    "application/friction_bench/friction_usb_log.h",
-    "application/friction_bench/friction_remote_bench.c",
-    "application/friction_bench/friction_remote_bench.h",
-    "application/gimbal_bench/gimbal.c",
-    "application/gimbal_bench/gimbal.h",
-    "application/gimbal_bench/gimbal_imu.c",
-    "application/gimbal_bench/gimbal_imu.h",
+    "application/services/parameters/friction_profile_service.c",
+    "application/services/parameters/friction_profile_service.h",
+    "application/services/runtime/runtime_events.c",
+    "application/services/runtime/runtime_events.h",
+    "application/friction/friction.c",
+    "application/friction/friction.h",
+    "application/friction/input/friction_usb_command.c",
+    "application/friction/input/friction_usb_command.h",
+    "application/friction/diagnostics/friction_usb_log.c",
+    "application/friction/diagnostics/friction_usb_log.h",
+    "application/friction/input/friction_remote_bench.c",
+    "application/friction/input/friction_remote_bench.h",
+    "application/gimbal/gimbal.c",
+    "application/gimbal/gimbal.h",
+    "application/gimbal/imu/gimbal_imu.c",
+    "application/gimbal/imu/gimbal_imu.h",
 )
 FORBIDDEN_HEADERS = re.compile(
     r"^(?:main\.h|stm32.*|FreeRTOS\.h|task\.h|cmsis.*|arm_math\.h|"
@@ -78,12 +78,12 @@ def main():
                 errors.append(f"{label}:{line}: hardware/driver internals in control business")
             if path in pure and include:
                 header = include[1].split("/")[-1]
-                if label.startswith("application/gimbal_control/") and header in (
+                if label.startswith("application/gimbal/control/") and header in (
                     "dbus_input.h", "gimbal_remote.h", "remote_control.h", "robot_cmd.h",
                     "vofa.h", "gimbal.h",
                 ):
                     errors.append(f"{label}:{line}: command-source dependency in actuator core")
-                if label.startswith("application/robot_cmd/") and header in (
+                if label.startswith("application/commands/") and header in (
                     "gimbal_control.h", "dm_velocity.h", "yaw_rate.h", "gimbal.h",
                     "dji_speed_group.h", "runtime_events.h", "friction.h", "friction_control.h",
                 ):

@@ -1,3 +1,5 @@
+[首页](../README.md) · [构建指南](../docs/guides/build.md)
+
 # 控制代码主机测试
 
 模块开关测试新增遥控/电机分离、IMU 原始采集、采集关闭、三种单轮、整组关闭、VOFA/到位监测关闭、USB/板级诊断/事件关闭及 BSP 接收发送隔离。配置与验证顺序见 [模块开关](../docs/architecture/module-switches.md)。
@@ -48,7 +50,7 @@ cmake --build build/host-tests --parallel 6
 ctest --test-dir build/host-tests --output-on-failure
 ```
 
-更换生成器或编译器时使用另一个构建目录。各模块原有 `run_tests.ps1 -Compiler <path>` 也继续有效。
+更换生成器或编译器时使用另一个构建目录。各模块原有 `run_tests.ps1 -Compiler <path>` 继续有效，现在统一转交完整验证入口，避免维护多份重复且容易过时的源码清单。需要主机编译器、CMake 和 Python。
 
 | 测试 | 验证内容 |
 | --- | --- |
@@ -76,6 +78,8 @@ ctest --test-dir build/host-tests --output-on-failure
 | control_stress + 两个种子变体 | 每个种子 10 万步控制、1 万次 VOFA 轮询、50 万随机 DBUS 字节；数值边界和故障约束 |
 | friction_configured | 真实 DJI 驱动/PID + 模拟 HAL：电流分组、方向、到位、调参、初次停机确认 |
 | friction_unconfigured | 默认 ID 未配置时不注册、不驱动 |
+| friction_usb_parser | 数值分隔符、无符号十进制、整数溢出、浮点溢出/下溢；非法输入不提交命令、调参或停止请求，合法小数/科学计数法仍可用 |
+| layout_links | 本地 Markdown 文件/目录链接与显式相对 C include 路径；不访问网络，不校验外部 URL 或标题锚点 |
 | architecture_boundaries | 可移植代码不引入 HAL/RTOS/驱动内部依赖；命令源不控制电机、执行核心不解析遥控 |
 
 `portable_control` 构建时没有 HAL/RTOS/vendor include 路径，使用 C11 严格警告。

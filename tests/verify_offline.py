@@ -36,7 +36,7 @@ def fingerprint():
     """Record a digest of project/test sources, excluding generated outputs."""
     digest = hashlib.sha256()
     paths = []
-    for name in ("application", "module", "bsp", "tests"):
+    for name in ("application", "module", "bsp", "tests", "build_scripts"):
         paths.extend(path for path in (REPO / name).rglob("*")
                      if path.is_file() and (path.suffix in (".c", ".h", ".mk", ".py")
                                             or path.name == "CMakeLists.txt"))
@@ -45,7 +45,7 @@ def fingerprint():
         digest.update(path.relative_to(REPO).as_posix().encode("utf-8") + b"\0")
         digest.update(hashlib.sha256(path.read_bytes()).digest())
     return {"sha256": digest.hexdigest(), "files": len(paths),
-            "scope": "application/module/bsp/tests C, H, mk, py and build manifests"}
+            "scope": "application/module/bsp/tests/build_scripts C, H, mk, py and build manifests"}
 
 
 def remove_owned_build(build, parent, token):

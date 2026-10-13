@@ -1,6 +1,6 @@
 # 参数双槽存储测试
 
-核心：`module/parameter_store/parameter_store.c`。
+核心：`module/system/parameter_store/parameter_store.c`。
 测试：`tests/parameter_store/test_parameter_store.c`，不依赖 HAL、RTOS 或外部库。
 
 在工程根目录用主机 GCC 编译运行：
@@ -9,7 +9,7 @@
 $hostBin = 'D:/CLion/CLion 2025.3.2/bin/mingw/bin'
 $env:PATH = "$hostBin;" + $env:PATH
 & "$hostBin/gcc.exe" "-B$hostBin/" -std=c11 -Wall -Wextra -Werror -pedantic -UNDEBUG `
-    -Imodule/parameter_store module/parameter_store/parameter_store.c `
+    -Imodule/system/parameter_store module/system/parameter_store/parameter_store.c `
     tests/parameter_store/test_parameter_store.c `
     -o tests/parameter_store/test_parameter_store.exe
 if ($LASTEXITCODE -ne 0) { throw 'Host compilation failed' }
