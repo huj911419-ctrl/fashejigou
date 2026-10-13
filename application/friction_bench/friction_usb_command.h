@@ -16,6 +16,9 @@ typedef enum
 } FrictionUsbResult_e;
 
 /** Diagnostic task only. Preserves set/pid/ramp syntax and mailbox semantics.
+ * line is NUL-terminated, without CR/LF. Arguments require spaces/tabs;
+ * mask/wheel are unsigned decimal digits. Nonfinite/out-of-range float
+ * conversions and malformed tokens return SYNTAX without submitting work.
  * QUEUED acknowledges input only; motor status/applied tuning are separate.
  * off is a global sticky stop; selected USB ownership is retained.
  * The compatibility boolean API remains declared in friction.h. */

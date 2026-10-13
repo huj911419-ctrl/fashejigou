@@ -1,45 +1,77 @@
 #include "../bench_features.h"
 #include "friction_usb_command.h"
 #include "friction.h"
+#include <errno.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 static uint16_t sequence;
 
+static uint8_t IsSeparator(char byte)
+{
+    return byte == ' ' || byte == '\t';
+}
+
+/* Every argument must start after a separator, not at a sign or decimal
+ * point left over from the previous conversion (for example 1+500+0+0). */
+static const char *ArgumentStart(const char *cursor)
+{
+    if (cursor == NULL || !IsSeparator(*cursor))
+    {
+        return NULL;
+    }
+    while (IsSeparator(*cursor))
+    {
+        ++cursor;
+    }
+    return cursor;
+}
+
 static const char *ParseFloat(const char *cursor, float *value)
 {
     char *end;
+    cursor = ArgumentStart(cursor);
     if (cursor == NULL)
     {
         return NULL;
     }
-    while (*cursor == ' ' || *cursor == '\t')
-    {
-        ++cursor;
-    }
+    errno = 0;
     *value = strtof(cursor, &end);
-    return end != cursor && isfinite(*value) ? end : NULL;
+    if (end == cursor || errno == ERANGE || !isfinite(*value) ||
+        (*end != '\0' && !IsSeparator(*end)))
+    {
+        return NULL;
+    }
+    return end;
 }
 
 static const char *ParseUnsigned(const char *cursor, unsigned *value)
 {
-    char *end;
-    if (cursor == NULL)
+    cursor = ArgumentStart(cursor);
+    if (cursor == NULL || *cursor < '0' || *cursor > '9')
     {
         return NULL;
     }
-    while (*cursor == ' ' || *cursor == '\t')
+    /* strtoul accepts a leading minus and wraps in unsigned long. Parse a
+     * bounded decimal explicitly so host and 32-bit MCU accept the same IDs. */
+    uint32_t parsed = 0U;
+    while (*cursor >= '0' && *cursor <= '9')
     {
+        uint32_t digit = (uint32_t)(*cursor - '0');
+        if (parsed > (UINT16_MAX - digit) / 10U)
+        {
+            return NULL;
+        }
+        parsed = parsed * 10U + digit;
         ++cursor;
     }
-    unsigned long parsed = strtoul(cursor, &end, 10);
-    if (end == cursor || parsed > 65535UL)
+    if (*cursor != '\0' && !IsSeparator(*cursor))
     {
         return NULL;
     }
     *value = (unsigned)parsed;
-    return end;
+    return cursor;
 }
 
 static uint8_t EndOfLine(const char *cursor)
