@@ -1,4 +1,87 @@
-# Meta-Embedded-NG
+# fashejigou · RoboMaster 云台与三摩擦轮控制
+
+## 项目详解
+
+本项目面向 RoboMaster 云台与发射机构控制，基于 **DM-MC02 / STM32H723 / FreeRTOS** 和 Meta-Embedded-NG 框架扩展。当前重点是两个独立应用：三摩擦轮速度控制台架、DM-J4310 Yaw 速度控制台架。它们服务于后续整体控制集成，不能按“已经完成整套自动发射系统”理解。
+
+初次阅读建议先看 [从这里开始](从这里开始.md)，再按目标选择专项文档。
+
+### 当前可以使用的部分
+
+| 子系统 | 当前能力 | 尚需区分的边界 |
+| --- | --- | --- |
+| [三摩擦轮](application/friction_bench/README.md) | 120° 三轮、C620/M3508 速度闭环、目标斜坡、遥控档位、调参、状态与故障处理 | 转速到位不等于完整发射许可；弹速与持续温升验收仍需单独完成 |
+| [J4310 云台](application/gimbal_bench/README.md) | 遥控生成 rad/s 目标、速度斜坡、达妙模式确认、超时与故障状态 | 目前是速度控制，不是已接入 IMU 的角度保持或世界坐标稳定 |
+| [BMI088 与姿态](application/gimbal_bench/IMU.md) | 独立采样、校准、姿态和状态快照 | 安装轴向仍需确认；六轴 IMU 不提供无漂移绝对航向 |
+| [USB 诊断](application/diagnostics/README.md) | 快照、日志、禁止运行原因和事件历史 | 查询与观察不等于清故障或获得电机控制许可 |
+| [参数管理](application/parameters/README.md) | 配置包版本/单位/CRC、电脑导入导出、停用时原子应用到 RAM | 双槽存储核心已有测试，真实 Flash 与启动加载尚未绑定 |
+| [角度控制准备](application/runtime/README.md) | 事件历史、间隔统计与连续角度 PI 核心 | 算法核心测试通过不代表已接入实际电机链 |
+
+### 目录与分层
+
+| 层次 | 路径 | 责任 |
+| --- | --- | --- |
+| 板级与传输 | `bsp/` | CAN/UART/USB/SPI、队列、时间与平台适配 |
+| 可复用核心 | `module/` | DBUS、达妙协议、速度/角度逻辑、姿态、参数、文本与波形协议 |
+| 应用执行 | `application/gimbal_control/` | 接受带原始时间戳的角速度命令，不解析遥控协议 |
+| 输入映射 | `application/robot_cmd/` | 遥控通道、方向、死区和控制请求 |
+| 应用装配 | `application/friction_bench/`、`application/gimbal_bench/` | 独立配置、任务、入口与状态组织 |
+| 生成与厂商代码 | `Core/`、`Drivers/`、`Middlewares/` | 外设启动、HAL、CMSIS、FreeRTOS |
+| 验证与工具 | `tests/`、`tools/` | 主机测试、架构检查、参数和日志工具 |
+
+主机可编译的控制/协议核心与 HAL/RTOS 适配分离，实时控制与调试通过邮箱或一致快照交接。两套台架各自独立构建，不依赖哨兵业务状态；共享总线与多设备组合仍须明确资源所有者。
+
+### 选择构建目标
+
+安装 GNU Arm Embedded 工具链和 Make，在仓库根目录运行：
+
+```bash
+git clone https://github.com/huj911419-ctrl/fashejigou.git
+cd fashejigou
+
+# 三摩擦轮独立台架
+make -f Makefile.friction -j8
+
+# J4310 Yaw 独立台架，另一个构建目标
+make -f Makefile.gimbal -j8
+```
+
+也可使用 `make ROBOT=friction_bench -j8` 和 `make ROBOT=gimbal_bench -j8`。产物分别位于 `build/friction_bench/` 与 `build/gimbal_bench/`，文件名前缀为 `Meta-Embedded-NG-<目标>`。
+
+普通 `make` 默认仍选择 `sentry`；保留的 `sentry/infantry` 机器人目标与独立台架是不同构建入口。仅编译不会烧录或改变硬件。
+
+### 配置与调试入口
+
+- [bench_features.h](application/bench_features.h)：逐模块选择遥控、电机、IMU、姿态、USB 和参数等功能。
+- [摩擦轮配置](application/friction_bench/friction_config.h)：电机总线、ID、方向、速度与 PI/电流限制；以实际源码和接线为准。
+- [云台配置](application/gimbal_bench/gimbal_config.h)：J4310 速度、时效、温度与遥控映射。
+- [USB 日志](application/friction_bench/USB_LOG.md)：摩擦轮状态、故障原因及 `status`、`log` 等命令。
+- [遥控摩擦轮](application/friction_bench/REMOTE.md)：来源选择、档位和停止后重新解锁约定。
+- [模块开关](docs/architecture/module-switches.md)：关闭功能后的诊断语义与验证方法。
+
+摩擦轮的 rpm 指电机转子转速，达妙速度目标单位是 rad/s，电流命令使用协议原始值。云台 UART5 用于 DBUS，不能把它当成待配置的波形调试串口。更改 ID、方向和阈值前先核对目标台架，避免沿用另一机器人参数。
+
+### 不连接硬件的验证
+
+准备主机 GCC/Clang、CMake 3.21+ 和 Python 3：
+
+```bash
+cmake -S tests -B build/host-tests
+cmake --build build/host-tests --parallel
+ctest --test-dir build/host-tests --output-on-failure
+```
+
+也可运行 `python3 tests/verify_offline.py`，由脚本管理临时构建与验证报告。覆盖范围与限制见 [主机测试](tests/README.md) 和 [离线验证方案](docs/verification/offline-validation.md)。
+
+主机测试使用替身接口，检查可移植算法、协议、编排、配置和故障约束，不模拟完整电机物理响应、真实 IRQ 时序或供电故障。实机转速、动态响应、弹速和温升需另行验收。
+
+### 阅读与维护
+
+推荐顺序：[工程入口](从这里开始.md) → [控制结构](docs/architecture/control-system.md) → 所选台架 README → 配置 → 可移植模块 → 板级端口 → 测试。项目保留 MIT 许可证与上游框架致谢，见 [LICENSE](LICENSE) 和下文。
+
+---
+
+以下保留框架基座与原有中英文说明。新增台架的当前能力、配置和验证边界以本节及专项文档为准。
 
 **第一次看代码：[整个工程怎样组织、怎样运行](从这里开始.md)。从目录分工、构建选择、启动流程和 FreeRTOS 任务开始。**
 
@@ -90,11 +173,11 @@ Meta-Embedded-NG/
 
 依赖 **GNU Arm Embedded 工具链**（`arm-none-eabi-gcc`）。
 
-> ⚠️ **首次构建前请手动创建 `build/` 目录**。Makefile 的 `mkdir` 规则不会自动创建父目录，全新检出的仓库若没有 `build/`，构建会报错 `mkdir: cannot create directory 'build/<robot>'`。
+> 当前 Makefile 会自动创建构建输出目录。也可预先执行 `mkdir -p build`，重复执行不会报错。
 
 ```bash
-# 首次构建前手动创建 build 目录（若已存在可跳过）
-mkdir build
+# 可选：预先创建构建目录
+mkdir -p build
 
 # 按机器人种类构建（ROBOT 默认为 sentry）
 # -j 启用并行编译；可用 -j<N> 限制并发数，如 -j8
@@ -203,11 +286,11 @@ Most submodules ship with a companion `*.md` doc (e.g. `module/message_center/me
 
 Requires the **GNU Arm Embedded toolchain** (`arm-none-eabi-gcc`).
 
-> ⚠️ **Create the `build/` directory before your first build.** The Makefile's `mkdir` rule does not create parent directories, so a fresh checkout without `build/` fails with `mkdir: cannot create directory 'build/<robot>'`.
+> The current Makefile creates output directories automatically. An optional `mkdir -p build` is safe to repeat.
 
 ```bash
-# One-time: create the build directory before the first build (skip if it exists)
-mkdir build
+# Optional: create the build directory in advance
+mkdir -p build
 
 # Build per robot variant (ROBOT defaults to sentry)
 # -j enables parallel compilation; pass -j<N> to cap the job count, e.g. -j8
