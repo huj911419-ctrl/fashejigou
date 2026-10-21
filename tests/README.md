@@ -76,6 +76,7 @@ ctest --test-dir build/host-tests --output-on-failure
 | control_stress + 两个种子变体 | 每个种子 10 万步控制、1 万次 VOFA 轮询、50 万随机 DBUS 字节；数值边界和故障约束 |
 | friction_configured | 真实 DJI 驱动/PID + 模拟 HAL：电流分组、方向、到位、调参、初次停机确认 |
 | friction_unconfigured | 默认 ID 未配置时不注册、不驱动 |
+| friction_usb_parser | 数值分隔符、无符号十进制、整数溢出、浮点溢出/下溢；非法输入不提交命令、调参或停止请求，合法小数/科学计数法仍可用 |
 | architecture_boundaries | 可移植代码不引入 HAL/RTOS/驱动内部依赖；命令源不控制电机、执行核心不解析遥控 |
 
 `portable_control` 构建时没有 HAL/RTOS/vendor include 路径，使用 C11 严格警告。

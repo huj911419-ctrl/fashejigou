@@ -107,6 +107,9 @@ control_test(friction_usb_control
     ${REPO}/application/runtime/runtime_events.c)
 target_include_directories(friction_usb_control PRIVATE
     ${REPO}/application/runtime ${REPO}/bsp/control_platform ${REPO}/module/motor/dji_speed_group)
+control_test(friction_usb_parser
+    ${REPO}/tests/friction_bench/test_usb_parser.c
+    ${REPO}/application/friction_bench/friction_usb_command.c)
 add_test(NAME friction_usb_startup_idle COMMAND friction_usb_control --idle)
 add_test(NAME friction_usb_startup_wrap COMMAND friction_usb_control --wrap)
 add_test(NAME friction_usb_startup_offline COMMAND friction_usb_control --offline)

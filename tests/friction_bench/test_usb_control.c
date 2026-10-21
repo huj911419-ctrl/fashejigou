@@ -117,8 +117,11 @@ int main(int argc, char **argv)
     assert(Snapshot().status.enabled_mask == 7U); /* Idempotent init cannot stop or reset a run. */
     for (unsigned i = 0U; i < 249U; ++i) { Tick(); }
     assert(Snapshot().status.command_age_ms == 250U && Snapshot().status.enabled_mask == 7U);
+    uint32_t generation = Snapshot().command_generation;
+    assert(FrictionUsbExecute("set 7+500+500+500", clock_ms) == FRICTION_USB_SYNTAX);
     Tick();
     assert(Snapshot().status.enabled_mask == 0U && Snapshot().status.rearm_required);
+    assert(Snapshot().command_generation == generation); /* Malformed RUN cannot renew the lease. */
     assert(Snapshot().status.active_fault == FRICTION_FAULT_COMMAND);
     assert(FrictionInit());
     assert(Snapshot().status.rearm_required); /* Boot-only OFF cannot be replayed at runtime. */
@@ -128,6 +131,8 @@ int main(int argc, char **argv)
     assert(Snapshot().status.enabled_mask == 0U); /* Accepted RUN cannot clear latched recovery. */
     assert(FrictionUsbExecute("off", clock_ms) == FRICTION_USB_QUEUED);
     Tick();
+    assert(FrictionUsbExecute("pid 1+3+0.1+0+12000", clock_ms) == FRICTION_USB_SYNTAX);
+    assert(Snapshot().tuning_revision == 0U && !Snapshot().tuning_pending_now);
     assert(FrictionUsbExecute("pid 1 3 0.1 0 12000", clock_ms) == FRICTION_USB_QUEUED);
     assert(Snapshot().tuning_revision == 0U && Snapshot().tuning_pending_now);
     Tick();
